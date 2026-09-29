@@ -99,8 +99,8 @@ class EventRepository:
         with self.session_scope() as session:
             if user.is_admin:
                 annual = session.query(AnnualEvent).filter(
-                    AnnualEvent.start_date <= iso,
-                    AnnualEvent.end_date >= iso
+                    func.date(AnnualEvent.start_date) <= iso,
+                    func.date(AnnualEvent.end_date) >= iso
                 ).all()
                 daily = session.query(DailyEvent).filter(
                     DailyEvent.day == d.day,
@@ -114,8 +114,8 @@ class EventRepository:
             restricted_type_ids = [type_id for type_id, access in access_map.items() if access == "restricted"]
 
             annual = session.query(AnnualEvent).filter(
-                AnnualEvent.start_date <= iso,
-                AnnualEvent.end_date >= iso,
+                func.date(AnnualEvent.start_date) <= iso,
+                func.date(AnnualEvent.end_date) >= iso,
                 AnnualEvent.type_id.in_(allowed_type_ids)
             ).all()
             daily = session.query(DailyEvent).filter(
@@ -132,8 +132,8 @@ class EventRepository:
         with self.session_scope() as session:
             if user.is_admin:
                 annual = session.query(AnnualEvent).filter(
-                    AnnualEvent.start_date <= to_iso,
-                    AnnualEvent.end_date >= from_iso
+                    func.date(AnnualEvent.start_date) <= to_iso,
+                    func.date(AnnualEvent.end_date) >= from_iso
                 ).all()
                 daily = session.query(DailyEvent).filter(
                     or_(
@@ -149,8 +149,8 @@ class EventRepository:
                                 access in dto_models.available_access_names]
             restricted_type_ids = [type_id for type_id, access in access_map.items() if access == "restricted"]
             annual = session.query(AnnualEvent).filter(
-                AnnualEvent.start_date <= to_iso,
-                AnnualEvent.end_date >= from_iso,
+                func.date(AnnualEvent.start_date) <= to_iso,
+                func.date(AnnualEvent.end_date) >= from_iso,
                 AnnualEvent.type_id.in_(allowed_type_ids)
             ).all()
             daily = session.query(DailyEvent).filter(
