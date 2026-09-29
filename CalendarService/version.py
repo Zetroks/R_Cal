@@ -6,7 +6,7 @@ BUILD — дата+счётчик каждой сборки (bump_version.py).
 """
 
 PROTOCOL = "2026.09.29"
-BUILD = "2026.09.29.2"
+BUILD = "2026.09.29.3"
 
 
 def is_compatible(client_protocol: str, min_protocol: str) -> bool:
