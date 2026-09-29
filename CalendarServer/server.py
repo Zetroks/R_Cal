@@ -162,6 +162,11 @@ def my_links(current_user=Depends(get_current_user)):
     return repo.my_links(current_user)
 
 
+@app.get("/event")
+def get_event(kind: str, id: int, current_user=Depends(get_current_user)):
+    return repo.get_event(kind, id, current_user)
+
+
 @app.post("/register_request")
 def register_request(dto: dto_models.RegisterDTO):
     return repo.register_request(dto.telegram_id, dto.login, dto.name)

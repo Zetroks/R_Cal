@@ -596,6 +596,26 @@ class EventRepository:
                     "telegram_id": row.telegram_id, "login": row.login,
                     "password": password}
 
+    def get_event(self, kind: str, event_id: int, user: database_models.User) -> dict:
+        model = {"annual": AnnualEvent, "daily": DailyEvent}.get(kind)
+        if model is None:
+            raise HTTPException(status_code=400, detail="Unknown kind")
+        with self.session_scope() as session:
+            obj = session.get(model, event_id)
+            if obj is None:
+                raise HTTPException(status_code=404, detail="Event not found")
+            mask: list = []
+            if not user.is_admin:
+                access_map = self.get_user_access(user, session=session)
+                level = access_map.get(obj.type_id, "none")
+                if level not in dto_models.available_access_names:
+                    raise HTTPException(status_code=404, detail="Event not found")
+                if level == "restricted":
+                    mask = getattr(obj, "__restricted__", [])
+            data = serialize_event(obj, mask)
+            data["type_name"] = obj.type.name if obj.type else ""
+            return {"event": data}
+
     def get_user(self, username: str, session=None) -> database_models.User | None:
         def get(_session):
             user = _session.query(database_models.User).filter(
