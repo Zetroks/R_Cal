@@ -9,7 +9,7 @@ const GOOGLE_COLORS = [
 ];
 
 const S = {
-  api: localStorage.getItem("cal_web_api") || "", // пусто = тот же origin (/api)
+  api: localStorage.getItem("cal_web_api") || "/api", // тот же origin, префикс API
   token: null, user: null, pass: null,
   year: new Date().getFullYear(),
   groups: [], groupById: {},
@@ -507,7 +507,7 @@ async function enterApp() {
   }
   $("login-view").hidden = true;
   $("app-view").hidden = false;
-  $("user-label").textContent = S.user + " @ " + (S.api || "этот сервер");
+  $("user-label").textContent = S.user + " @ " + (S.api === "/api" ? "этот сервер" : S.api);
   const acc = await apiGet("/my_access");
   S.isAdmin = !!acc.IsAdmin;
   S.access = S.isAdmin ? {} : acc;
@@ -532,7 +532,7 @@ async function doLogin(ev) {
   const btn = $("login-btn");
   btn.disabled = true;
   try {
-    S.api = $("login-server").value.trim().replace(/\/+$/, "") || "";
+    S.api = $("login-server").value.trim().replace(/\/+$/, "") || "/api";
     const user = $("login-user").value.trim();
     const pass = $("login-pass").value;
     if (!user || !pass) throw new Error("Введите пользователя и пароль");
