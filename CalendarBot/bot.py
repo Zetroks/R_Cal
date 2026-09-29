@@ -809,9 +809,9 @@ def _run_update_remote():
     if not os.path.exists(kh):
         return -1, f"no known_hosts at {kh} (whoami={os.environ.get('USER')}, HOME={os.environ.get('HOME')})"
     cli.load_system_host_keys()
-    nkeys = len(cli.get_host_keys())
+    nkeys = len(cli._system_host_keys)
     if nkeys == 0:
-        return -1, f"known_hosts at {kh} parsed 0 keys"
+        return -1, f"system store empty after loading {kh}"
     cli.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
         cli.connect(host, username=user, pkey=pkey, timeout=30,
