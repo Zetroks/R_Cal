@@ -18,7 +18,10 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",  # calendarList/discovery
+    "https://www.googleapis.com/auth/calendar.events",  # CRUD событий
+]
 
 BASE_DIR = Path(__file__).resolve().parent
 CLIENT_SECRET_FILE = os.environ.get(
