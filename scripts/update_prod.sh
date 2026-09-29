@@ -10,9 +10,9 @@ git pull --ff-only
 AFTER=$(git rev-parse --short HEAD)
 echo "was $BEFORE now $AFTER"
 
-if [ "$BEFORE" != "$AFTER" ] && git diff --name-only "$BEFORE" "$AFTER" | grep -q requirements.txt; then
+if [ "$BEFORE" != "$AFTER" ] && git diff --name-only "$BEFORE" "$AFTER" | grep -q requirements; then
     echo "== pip install =="
-    ./.venv/bin/python -m pip install -r requirements.txt
+    ./.venv/bin/python -m pip install -r requirements-server.txt
 fi
 
 for svc in calendar-server calendar-web; do
