@@ -17,6 +17,11 @@ class EventType(Base):
     color = Column(String)
     version = Column(Integer, default=0, server_default="0", nullable=False)
     updated_by = Column(String)
+    # --- Google Calendar sync (per-category settings) ---
+    google_calendar_id = Column(String, nullable=True)
+    google_color_id = Column(String, nullable=True)
+    google_visibility = Column(String, nullable=True)  # default/public/private
+    google_sync_enabled = Column(Boolean, default=False, server_default="0", nullable=False)
 
 
 class AnnualEvent(Base):
@@ -38,6 +43,7 @@ class AnnualEvent(Base):
         default=func.now(),
         onupdate=func.now()
     )
+    google_event_id = Column(String, nullable=True, index=True)
 
 
 class DailyEvent(Base):
@@ -58,6 +64,7 @@ class DailyEvent(Base):
         default=func.now(),
         onupdate=func.now()
     )
+    google_event_id = Column(String, nullable=True, index=True)
 
 
 class DailyEventHistory(Base):
