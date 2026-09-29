@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QHBoxLayout, QWidget, QVBoxLayout, QLabel, QFrame, QToolButton, QApplication, QStyle, \
     QDialog, QColorDialog, QPushButton, QSizePolicy, QLineEdit, QGridLayout, QComboBox, QCheckBox
-from PyQt5.QtGui import QPainter, QPen, QWindow, QColor
+from PyQt5.QtGui import QPainter, QPen, QWindow, QColor, QIcon, QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QObject
 
 from CalendarService import dto_models, service
@@ -65,6 +65,27 @@ class ClickableColorPreview(QFrame):
 def _str_or_empty(v):
     # сервер сериализует NULL как строку "None" — не тащим её в UI
     return "" if v in (None, "None") else v
+
+
+GOOGLE_COLORS = [
+    ("1", "Lavender", "#a4bdfc"),
+    ("2", "Sage", "#7ae7bf"),
+    ("3", "Grape", "#dbadff"),
+    ("4", "Flamingo", "#ff887c"),
+    ("5", "Banana", "#fbd75b"),
+    ("6", "Tangerine", "#ffb878"),
+    ("7", "Peacock", "#46d6db"),
+    ("8", "Graphite", "#e1e1e1"),
+    ("9", "Blueberry", "#5484ed"),
+    ("10", "Basil", "#51b749"),
+    ("11", "Tomato", "#dc2127"),
+]
+
+
+def _color_icon(hex_color: str) -> QIcon:
+    pix = QPixmap(16, 16)
+    pix.fill(QColor(hex_color))
+    return QIcon(pix)
 
 
 class CalListWorker(QObject):
@@ -264,11 +285,8 @@ class GroupEditWidget(QDialog):
         self.grid.addWidget(QLabel("Color"), 6, 0)
         self.gcolor_combo = QComboBox()
         self.gcolor_combo.addItem("default", "")
-        for cid, cname in [("1", "Lavender"), ("2", "Sage"), ("3", "Grape"),
-                           ("4", "Flamingo"), ("5", "Banana"), ("6", "Tangerine"),
-                           ("7", "Peacock"), ("8", "Graphite"), ("9", "Blueberry"),
-                           ("10", "Basil"), ("11", "Tomato")]:
-            self.gcolor_combo.addItem(f"{cid} {cname}", cid)
+        for cid, cname, chex in GOOGLE_COLORS:
+            self.gcolor_combo.addItem(_color_icon(chex), f"{cid} {cname}", cid)
         idx = self.gcolor_combo.findData(group.google_color_id or "")
         if idx >= 0:
             self.gcolor_combo.setCurrentIndex(idx)
