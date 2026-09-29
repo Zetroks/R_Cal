@@ -455,16 +455,28 @@ class YearWidget(QWidget):
         return changed
 
     def start_show_year(self, year: int):
-        self.collect_year_thread = QThread()
         try:
             worker = CollectYearWorker.get(year)
         except WorkerExistException:
-            return  # TODO: add fail message
+            return  # предыдущая загрузка ещё идёт
 
-        worker.moveToThread(self.collect_year_thread)
-        self.collect_year_thread.started.connect(worker.run)  # type: ignore
-        worker.finished.connect(self.do_show_year)
-        self.collect_year_thread.start()
+        old = self.collect_year_thread
+        if old is not None:
+            old.quit()
+            old.finished.connect(old.deleteLater)  # type: ignore
+
+        thread = QThread(self)
+        self.collect_year_thread = thread
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)  # type: ignore
+        worker.finished.connect(self.do_show_year)  # type: ignore
+        worker.finished.connect(thread.quit)  # type: ignore
+        thread.finished.connect(self._on_collect_finished)  # type: ignore
+        thread.finished.connect(thread.deleteLater)  # type: ignore
+        thread.start()
+
+    def _on_collect_finished(self):
+        self.collect_year_thread = None
 
     def __init__(self, year: int):
         self.collect_year_thread = None
@@ -486,3 +498,9 @@ class YearWidget(QWidget):
 
             layout.addWidget(cal, row, col)
             self.calendars.append(cal)
+
+    def set_year(self, year: int):
+        self.year = year
+        for month, cal in enumerate(self.calendars, start=1):
+            cal.show_month(datetime(year, month, 1))
+        self.start_show_year(year)

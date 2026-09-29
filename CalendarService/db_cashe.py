@@ -65,8 +65,13 @@ class cache:
             self.__reference_year__ = year_data
         else:
             for event_day, event in self.__reference_year__.Events.items():
-                year_data.Events[event_day].daily = event.daily
-                year_data.Months[event_day.month].Days[event_day.day].daily = event.daily
+                target = year_data.Events.get(event_day)
+                if target is None:
+                    continue
+                target.daily = event.daily
+                month = year_data.Months.get(event_day.month)
+                if month is not None and event_day.day in month.Days:
+                    month.Days[event_day.day].daily = event.daily
 
         self.year_data[year] = year_data
         self._original_year_data_[year] = copy.deepcopy(year_data)

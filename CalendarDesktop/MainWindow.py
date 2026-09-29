@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from .DispatchList import DispatchListWidget
 from .Calendar import YearWidget
+from .YearSwitcher import YearSwitcher
 from CalendarService.models import BaseEvent, EventGroup
 from .LegendWidget import LegendWidget
 from .EventEditor import EventEditorPanel
@@ -73,13 +74,19 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(_root)
         left_layout = QVBoxLayout(_root)
 
+        self.current_year = 2026
+        self.year_switcher = YearSwitcher()
+        self.year_switcher.set_year(self.current_year)
+        self.year_switcher.step.connect(self.on_year_step)  # type: ignore
+        left_layout.addWidget(self.year_switcher)
+
         self.legend = LegendWidget()
         self.legend.visibility_updated.connect(self.visibility_changed)  # type: ignore
 
         self.upload_status = DispatchListWidget()
 
 
-        self.year = YearWidget(2026)
+        self.year = YearWidget(self.current_year)
 
         self.editor = EventEditorPanel()
         self.editor.on_data_changed.connect(self.data_changed)  # type: ignore
@@ -104,6 +111,21 @@ class MainWindow(QMainWindow):
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll_once)  # type: ignore
         self.poll_timer.start(self.POLL_INTERVAL_MS)
+
+    def on_year_step(self, delta: int):
+        r = self.confirm_unsaved()
+        if r == "cancel":
+            return
+        if r == "save":
+            self.editor.save_all()
+        elif r == "discard":
+            self.editor.discard_all()
+        self.set_year(self.current_year + delta)
+
+    def set_year(self, year: int):
+        self.current_year = year
+        self.year_switcher.set_year(year)
+        self.year.set_year(year)
 
     def confirm_unsaved(self) -> str:
         """'save' | 'discard' | 'cancel' | 'clean'."""
