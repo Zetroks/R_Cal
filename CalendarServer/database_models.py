@@ -115,12 +115,22 @@ class EventTypeAccess(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     type_id = Column(Integer, ForeignKey("event_types.id"), primary_key=True)
 
-    access_level = Column(String)  # "none", "restricted", "full", "editor", "owner"
+    access_level = Column(String)  # none/restricted/viewer/member/editor/manager/owner
     # "none" - has no access to type or any events with this type
-    # "restricted" - has access to events with this type, but some fields not available
-    # "full" - has full access to events with this type
-    # "editor" - has full access + access to edit type. aka name and color
-    # "owner" - has editor access and can set other roles for that type
+    # "restricted" - VIEW access, some fields masked
+    # "viewer" - VIEW access
+    # "member" - EDIT access to events
+    # "editor" - full access + edit type (name and color)
+    # "manager" - editor + grant roles to linked users (no google settings)
+    # "owner" - full control: roles, google link, ownership
+
+
+class UserLink(Base):
+    __tablename__ = "user_links"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    linked_user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    status = Column(String, default="pending")  # pending/accepted
 
 
 class UserCanEdit(Base):

@@ -304,10 +304,17 @@ class EventRepository:
             obj = session.get(EventType, dto.id)
             if not obj:
                 raise HTTPException(status_code=404, detail="EventType not found")
-            if not user.is_admin:
-                editable = self.get_user_editable(user, session=session)
-                if dto.id not in editable:
-                    raise HTTPException(status_code=403, detail="Not enough access")
+            role = self._type_role(user, dto.id, session)
+            rank = dto_models.GROUP_ACCESS[role.upper()]
+            wants_type_edit = dto.name is not None or dto.color is not None
+            wants_google = (dto.google_calendar_id is not None
+                            or dto.google_color_id is not None
+                            or dto.google_visibility is not None
+                            or dto.google_sync_enabled is not None)
+            if wants_type_edit and rank < dto_models.GROUP_ACCESS.EDITOR:
+                raise HTTPException(status_code=403, detail="Not enough access")
+            if wants_google and role != "owner":
+                raise HTTPException(status_code=403, detail="Google settings: owner only")
             old_enabled = bool(obj.google_sync_enabled)
             old_target = obj.google_calendar_id or ""
             if dto.name is not None:
@@ -444,6 +451,93 @@ class EventRepository:
                                 "data": serialize_event(obj, mask), "ts": ts})
             return {"updates": updates, "server_time": now_s, "full_reload": False}
 
+    def grant_access(self, type_id: int, target_user_id: int, level: str,
+                       granter: database_models.User) -> dict:
+        try:
+            new_rank = dto_models.GROUP_ACCESS[level.upper()]
+        except KeyError:
+            raise HTTPException(status_code=400, detail="Unknown access level")
+        with self.session_scope(commit=True) as session:
+            if target_user_id == granter.id:
+                raise HTTPException(status_code=400, detail="Cannot change own role")
+            target = session.get(database_models.User, target_user_id)
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            if not session.get(EventType, type_id):
+                raise HTTPException(status_code=404, detail="EventType not found")
+            my_role = self._type_role(granter, type_id, session)
+            my_rank = dto_models.GROUP_ACCESS[my_role.upper()]
+            if my_rank < dto_models.GROUP_ACCESS.MANAGER:
+                raise HTTPException(status_code=403, detail="Not enough access")
+            if not (new_rank < my_rank or (my_role == "owner" and level == "owner")):
+                raise HTTPException(status_code=403, detail="Cannot grant this level")
+            if not granter.is_admin and not self._are_linked(granter.id, target_user_id, session):
+                raise HTTPException(status_code=403, detail="User is not linked with you")
+            row = session.get(database_models.EventTypeAccess, (target_user_id, type_id))
+            if level == "none":
+                if row:
+                    session.delete(row)
+            elif row:
+                row.access_level = level
+            else:
+                session.add(database_models.EventTypeAccess(
+                    user_id=target_user_id, type_id=type_id, access_level=level))
+            return {"type_id": type_id, "user_id": target_user_id, "access_level": level}
+
+    @staticmethod
+    def _are_linked(a: int, b: int, session) -> bool:
+        if a == b:
+            return True
+        return session.query(database_models.UserLink).filter(
+            database_models.UserLink.user_id == a,
+            database_models.UserLink.linked_user_id == b,
+            database_models.UserLink.status == "accepted",
+        ).first() is not None
+
+    def link_request(self, target_login: str, user: database_models.User) -> dict:
+        with self.session_scope(commit=True) as session:
+            target = session.query(database_models.User).filter(
+                database_models.User.login == target_login).first()
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found")
+            if target.id == user.id:
+                raise HTTPException(status_code=400, detail="Cannot link yourself")
+            existing = session.get(database_models.UserLink, (user.id, target.id))
+            if existing:
+                return {"status": existing.status}
+            session.add(database_models.UserLink(
+                user_id=user.id, linked_user_id=target.id, status="pending"))
+            return {"status": "pending"}
+
+    def link_answer(self, requester_id: int, accept: bool, user: database_models.User) -> dict:
+        with self.session_scope(commit=True) as session:
+            row = session.get(database_models.UserLink, (requester_id, user.id))
+            if not row or row.status != "pending":
+                raise HTTPException(status_code=404, detail="No pending request")
+            if accept:
+                row.status = "accepted"
+                rev = session.get(database_models.UserLink, (user.id, requester_id))
+                if rev:
+                    rev.status = "accepted"
+                else:
+                    session.add(database_models.UserLink(
+                        user_id=user.id, linked_user_id=requester_id, status="accepted"))
+                return {"status": "accepted"}
+            session.delete(row)
+            return {"status": "declined"}
+
+    def my_links(self, user: database_models.User) -> dict:
+        with self.session_scope() as session:
+            rows = session.query(database_models.UserLink).filter(
+                database_models.UserLink.user_id == user.id).all()
+            out = []
+            for r in rows:
+                u = session.get(database_models.User, r.linked_user_id)
+                out.append({"user_id": r.linked_user_id,
+                            "login": u.login if u else "?",
+                            "status": r.status})
+            return {"links": out}
+
     def get_user(self, username: str, session=None) -> database_models.User | None:
         def get(_session):
             user = _session.query(database_models.User).filter(
@@ -470,10 +564,11 @@ class EventRepository:
         return get(session)
 
     def get_user_editable(self, user: database_models.User, session=None) -> Set[int]:
+        """Типы, в которых можно править СОБЫТИЯ: member и выше."""
         def get(_session):
             editable = session.query(EventTypeAccess).filter(
                 EventTypeAccess.user_id == user.id,
-                EventTypeAccess.access_level.in_(["editor", "owner"])
+                EventTypeAccess.access_level.in_(["member", "editor", "manager", "owner"])
             ).all()
             return {e.type_id for e in editable}
 
@@ -481,6 +576,25 @@ class EventRepository:
             with self.session_scope() as session:
                 return get(session)
         return get(session)
+
+    def get_user_type_editable(self, user: database_models.User, session=None) -> Set[int]:
+        """Типы, у которых можно править НАСТРОЙКИ (имя/цвет): editor и выше."""
+        def get(_session):
+            editable = session.query(EventTypeAccess).filter(
+                EventTypeAccess.user_id == user.id,
+                EventTypeAccess.access_level.in_(["editor", "manager", "owner"])
+            ).all()
+            return {e.type_id for e in editable}
+
+        if session is None:
+            with self.session_scope() as session:
+                return get(session)
+        return get(session)
+
+    def _type_role(self, user: database_models.User, type_id: int, session) -> str:
+        if user.is_admin:
+            return "owner"
+        return self.get_user_access(user, session=session).get(type_id, "none")
 
     def get_front_user_access(self, user: database_models.User, session=None):
         if user.is_admin:

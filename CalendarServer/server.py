@@ -140,3 +140,23 @@ def google_calendars(current_user=Depends(get_current_user)):
 @app.get("/updates")
 def get_updates(since: str = "", year: int = 0, current_user=Depends(get_current_user)):
     return repo.get_updates(since, year, current_user)
+
+
+@app.post("/grant")
+def grant(dto: dto_models.GrantDTO, current_user=Depends(get_current_user)):
+    return repo.grant_access(dto.type_id, dto.user_id, dto.access_level, current_user)
+
+
+@app.post("/link_request")
+def link_request(dto: dto_models.LinkRequestDTO, current_user=Depends(get_current_user)):
+    return repo.link_request(dto.target_login, current_user)
+
+
+@app.post("/link_answer")
+def link_answer(dto: dto_models.LinkAnswerDTO, current_user=Depends(get_current_user)):
+    return repo.link_answer(dto.user_id, dto.accept, current_user)
+
+
+@app.get("/my_links")
+def my_links(current_user=Depends(get_current_user)):
+    return repo.my_links(current_user)

@@ -24,7 +24,8 @@ class EventUpsertDTO(BaseModel):
 
 
 class GROUP_ACCESS(AccessEnum):
-    OWNER = ("owner", 5)
+    OWNER = ("owner", 6)
+    MANAGER = ("manager", 5)
     EDITOR = ("editor", 4)
     MEMBER = ("member", 3)
     VIEWER = ("viewer", 2)
@@ -35,7 +36,8 @@ class GROUP_ACCESS(AccessEnum):
     # "viewer" - has VIEW access to events with this type
     # "member" - has EDIT access to events with this type
     # "editor" - has full access + access to edit type. aka name and color
-    # "owner" - has editor access and can set other roles for that type
+    # "manager" - editor + can grant roles to linked users. no google settings, no ownership
+    # "owner" - full control: roles, google link, ownership
 
 
 available_access_names = [k.value for k in GROUP_ACCESS if k != GROUP_ACCESS.NONE]
@@ -53,4 +55,19 @@ class EventTypeUpsertDTO(BaseModel):
 
 class SyncGroupDTO(BaseModel):
     type_id: int
+
+
+class GrantDTO(BaseModel):
+    type_id: int
+    user_id: int
+    access_level: str
+
+
+class LinkRequestDTO(BaseModel):
+    target_login: str
+
+
+class LinkAnswerDTO(BaseModel):
+    user_id: int
+    accept: bool
 
