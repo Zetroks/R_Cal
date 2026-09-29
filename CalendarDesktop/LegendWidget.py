@@ -338,6 +338,7 @@ class GroupEditWidget(QDialog):
 
     def on_group_saved(self, resp):
         self._stop_save_worker()
+        self.save_button.setEnabled(True)
         data = (resp or {}).get("event_type", {})
         if "google_sync_enabled" in data:
             v = data["google_sync_enabled"]
@@ -349,6 +350,16 @@ class GroupEditWidget(QDialog):
                   "google_visibility", "google_sync_enabled"):
             if f in data:
                 setattr(self.group, f, data[f])
+        sync = (resp or {}).get("sync")
+        if sync:
+            msg = (f"Сохранено. Google sync: вставлено {sync.get('inserted', 0)}, "
+                   f"обновлено {sync.get('updated', 0)}.")
+            errs = sync.get("errors") or []
+            if errs:
+                msg += " Ошибки: " + "; ".join(errs[:3])
+            self.status_label.setStyleSheet("color: black;")
+            self.status_label.setText(msg)
+            return
         self.accept()
 
     def on_group_save_failed(self, message: str):
@@ -525,8 +536,7 @@ class LegendWidget(QWidget):
                 result = edit.exec()
                 print(result)
                 print(f"click edit on event type: {group.id}")
-                if result == QDialog.Accepted:
-                    self.refresh()
+                self.refresh()
 
             edit_button = QToolButton(self)
             icon = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)

@@ -357,6 +357,12 @@ class EventRepository:
                         errors.append("...truncated")
                         break
             session.commit()
+            logging.info(
+                "Google backfill type=%s target=%s inserted=%s updated=%s errors=%d",
+                type_id, target, inserted, updated, len(errors),
+            )
+            if errors:
+                logging.warning("Google backfill errors: %s", errors[:10])
             return {"target": target, "inserted": inserted, "updated": updated, "errors": errors}
 
     @staticmethod

@@ -47,10 +47,19 @@ def get_credentials() -> Credentials:
     return creds
 
 
-def get_service():
-    from googleapiclient.discovery import build
+_service_instance = None
 
-    return build("calendar", "v3", credentials=get_credentials())
+
+def get_service():
+    """Один service на процесс (build тянет discovery-документ по HTTP)."""
+    global _service_instance
+    if _service_instance is None:
+        from googleapiclient.discovery import build
+
+        _service_instance = build(
+            "calendar", "v3", credentials=get_credentials(), cache_discovery=False
+        )
+    return _service_instance
 
 
 def main():
