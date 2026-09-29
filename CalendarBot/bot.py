@@ -106,6 +106,9 @@ MENU = ReplyKeyboardMarkup([["\u2795 Добавить"],
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = update.effective_user.id
     status, _ = await api_me(tg_id)
+    if status == -1:
+        await update.message.reply_text("Сервер недоступен, попробуй позже.")
+        return ConversationHandler.END
     if status == 200:
         await update.message.reply_text("С возвращением.", reply_markup=MENU)
         return ConversationHandler.END
@@ -507,6 +510,9 @@ async def open_card(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _require_user(update, ctx):
     tg_id = update.effective_user.id
     status, _ = await api_me(tg_id)
+    if status == -1:
+        await update.message.reply_text("Сервер недоступен, попробуй позже.")
+        return None
     if status == 401:
         await update.message.reply_text("Сначала регистрация: /start")
         return None
