@@ -5,7 +5,7 @@ import requests
 
 from enum import Enum
 
-from ..AppStorage import AppStorage
+from .AppStorage import AppStorage
 
 
 class DayType(str, Enum):

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from datetime import date, datetime
 from typing import Type
 
-from ..pydantic_modal_widgets import CustomDateEdit
+from .pydantic_modal_widgets import CustomDateEdit
 
 
 class PydanticModal(QDialog):

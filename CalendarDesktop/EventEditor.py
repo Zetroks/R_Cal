@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import QDate, Qt, pyqtSignal, QSignalBlocker, QTimer
 
 from CalendarService.dto_models import GROUP_ACCESS
-from ..MultiField import MultiField
+from .MultiFields.MultiField import MultiField
 from .ThreadService import UploadWorker
 from .pydantic_modal import PydanticModal
 from typing import List, Type

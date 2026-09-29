@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import QApplication
-from ..MainWindow import MainWindow
+from .MainWindow import MainWindow
 from .MultiFields.loader import load_all_fields
 
 if __name__ == "__main__":

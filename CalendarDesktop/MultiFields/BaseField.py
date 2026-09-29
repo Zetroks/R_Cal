@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QToolButton, QApplication, QStyle
 
-from ....AppStorage import AppStorage
+from ..AppStorage import AppStorage
 from CalendarService.models import BaseEvent
 
 

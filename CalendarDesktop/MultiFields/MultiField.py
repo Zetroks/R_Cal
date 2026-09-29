@@ -3,7 +3,7 @@ import json
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHBoxLayout, QDialog, QLabel, QLineEdit
 
-from ..BaseField import BaseField
+from .BaseField import BaseField
 
 class AddFieldDialog(QDialog):
 

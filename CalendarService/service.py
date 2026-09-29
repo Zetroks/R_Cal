@@ -62,7 +62,7 @@ class EventRepository:
         }
 
     def _handle_401(self, method, path, **kwargs):
-        print("Token expired → relogin")
+        print("Token expired, relogin")
 
         self.login(self.username, self.password)
 

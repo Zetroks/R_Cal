@@ -3,7 +3,7 @@ import webbrowser
 from typing import Tuple
 from urllib.parse import urlparse
 
-from ..BaseField import BaseField
+from .BaseField import BaseField
 
 
 class UrlField(BaseField):

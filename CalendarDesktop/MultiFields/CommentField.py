@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from ..BaseField import BaseField
+from .BaseField import BaseField
 
 
 class CommentField(BaseField):

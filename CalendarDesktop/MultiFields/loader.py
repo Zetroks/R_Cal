@@ -1,7 +1,7 @@
 # Calendar/MultiFields/loader.py
 import importlib
 import pkgutil
-from ... import MultiFields
+from .. import MultiFields
 
 
 def load_all_fields():
