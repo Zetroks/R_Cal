@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calendar"
+version = "0.1.0"
+description = "Production calendar: FastAPI backend + PyQt5 desktop client"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools]
+packages = [
+    "CalendarService",
+    "CalendarServer",
+    "CalendarDesktop",
+    "CalendarDesktop.MultiFields",
+]
+
+[tool.black]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
