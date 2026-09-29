@@ -1,5 +1,7 @@
 .venv/
 .env
+.google_client_secret.json
+.google_token.json
 __pycache__/
 *.pyc
 *.pyo
