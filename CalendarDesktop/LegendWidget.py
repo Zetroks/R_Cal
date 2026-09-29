@@ -1,9 +1,9 @@
 from PyQt5.QtWidgets import QHBoxLayout, QWidget, QVBoxLayout, QLabel, QFrame, QToolButton, QApplication, QStyle, \
-    QDialog, QColorDialog, QPushButton, QSizePolicy, QLineEdit, QGridLayout
+    QDialog, QColorDialog, QPushButton, QSizePolicy, QLineEdit, QGridLayout, QComboBox, QCheckBox
 from PyQt5.QtGui import QPainter, QPen, QWindow, QColor
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QObject
 
-from CalendarService import dto_models
+from CalendarService import dto_models, service
 from CalendarService.dto_models import GROUP_ACCESS
 from CalendarService.models import EventGroup
 from .VisibilityControl import VisibilityControl
@@ -61,6 +61,28 @@ class ClickableColorPreview(QFrame):
             self.clicked.emit()
 
         super().mousePressEvent(event)
+
+def _str_or_empty(v):
+    # сервер сериализует NULL как строку "None" — не тащим её в UI
+    return "" if v in (None, "None") else v
+
+
+class GroupSaveWorker(QObject):
+    finished = pyqtSignal(object)  # response dict
+    failed = pyqtSignal(str)
+
+    def __init__(self, payload: dict):
+        super().__init__()
+        self.payload = payload
+
+    def run(self):
+        try:
+            resp = service.EventRepository.get().update_event_type(self.payload)
+        except Exception as exc:
+            self.failed.emit(str(exc))  # type: ignore
+            return
+        self.finished.emit(resp)  # type: ignore
+
 
 class GroupEditWidget(QDialog):
     def __init__(self, group: EventGroup, parent=None):
@@ -203,6 +225,48 @@ class GroupEditWidget(QDialog):
 
         self.grid.addLayout(local_color_layout, 2, 2)
 
+        # =====================================================
+        # GOOGLE SYNC
+        # =====================================================
+
+        google_label = QLabel("GOOGLE SYNC")
+        google_label.setStyleSheet("font-weight: bold;")
+        self.grid.addWidget(google_label, 3, 0, 1, 3)
+
+        self.grid.addWidget(QLabel("Enabled"), 4, 0)
+        self.gsync_check = QCheckBox("Синхронизировать группу")
+        self.gsync_check.setChecked(bool(group.google_sync_enabled))
+        self.grid.addWidget(self.gsync_check, 4, 1, 1, 2)
+
+        self.grid.addWidget(QLabel("Calendar ID"), 5, 0)
+        self.gcal_edit = QLineEdit()
+        self.gcal_edit.setText(_str_or_empty(group.google_calendar_id))
+        self.gcal_edit.setPlaceholderText("пусто = календарь по умолчанию")
+        self.grid.addWidget(self.gcal_edit, 5, 1, 1, 2)
+
+        self.grid.addWidget(QLabel("Color"), 6, 0)
+        self.gcolor_combo = QComboBox()
+        self.gcolor_combo.addItem("default", "")
+        for cid, cname in [("1", "Lavender"), ("2", "Sage"), ("3", "Grape"),
+                           ("4", "Flamingo"), ("5", "Banana"), ("6", "Tangerine"),
+                           ("7", "Peacock"), ("8", "Graphite"), ("9", "Blueberry"),
+                           ("10", "Basil"), ("11", "Tomato")]:
+            self.gcolor_combo.addItem(f"{cid} {cname}", cid)
+        idx = self.gcolor_combo.findData(group.google_color_id or "")
+        if idx >= 0:
+            self.gcolor_combo.setCurrentIndex(idx)
+        self.grid.addWidget(self.gcolor_combo, 6, 1, 1, 2)
+
+        self.grid.addWidget(QLabel("Visibility"), 7, 0)
+        self.gvis_combo = QComboBox()
+        self.gvis_combo.addItem("default", "")
+        for v in ("public", "private"):
+            self.gvis_combo.addItem(v, v)
+        idx = self.gvis_combo.findData(group.google_visibility or "")
+        if idx >= 0:
+            self.gvis_combo.setCurrentIndex(idx)
+        self.grid.addWidget(self.gvis_combo, 7, 1, 1, 2)
+
         self.main_layout.addLayout(self.grid)
 
         # =====================================================
@@ -212,6 +276,14 @@ class GroupEditWidget(QDialog):
         self.sharing_widget = GroupSharingWidget()
 
         self.main_layout.addWidget(self.sharing_widget)
+
+        # =====================================================
+        # Status
+        # =====================================================
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.main_layout.addWidget(self.status_label)
 
         # =====================================================
         # Bottom buttons
@@ -225,7 +297,7 @@ class GroupEditWidget(QDialog):
         self.save_button = QPushButton("Save")
 
         self.cancel_button.clicked.connect(self.reject)
-        self.save_button.clicked.connect(self.accept)
+        self.save_button.clicked.connect(self.save_group)
 
         buttons_layout.addWidget(self.cancel_button)
         buttons_layout.addWidget(self.save_button)
@@ -237,6 +309,66 @@ class GroupEditWidget(QDialog):
         # =====================================================
 
         self.update_access()
+
+    # =========================================================
+    # GROUP SAVE (server + google sync settings)
+    # =========================================================
+
+    def save_group(self):
+        payload = {
+            "id": self.group.id,
+            "name": self.server_name_edit.text().strip() or self.group.name,
+            "color": self.server_color,
+            "google_calendar_id": self.gcal_edit.text().strip(),
+            "google_color_id": self.gcolor_combo.currentData(),
+            "google_visibility": self.gvis_combo.currentData(),
+            "google_sync_enabled": self.gsync_check.isChecked(),
+        }
+        self.save_button.setEnabled(False)
+        self.status_label.setStyleSheet("color: black;")
+        self.status_label.setText("Сохранение...")
+
+        self._save_thread = QThread()
+        self._save_worker = GroupSaveWorker(payload)
+        self._save_worker.moveToThread(self._save_thread)
+        self._save_thread.started.connect(self._save_worker.run)  # type: ignore
+        self._save_worker.finished.connect(self.on_group_saved)  # type: ignore
+        self._save_worker.failed.connect(self.on_group_save_failed)  # type: ignore
+        self._save_thread.start()
+
+    def on_group_saved(self, resp):
+        self._stop_save_worker()
+        data = (resp or {}).get("event_type", {})
+        if "google_sync_enabled" in data:
+            v = data["google_sync_enabled"]
+            data["google_sync_enabled"] = v in (True, 1, "1", "true", "True")
+        for f in ("google_calendar_id", "google_color_id", "google_visibility"):
+            if data.get(f) == "None":
+                data[f] = None
+        for f in ("name", "color", "google_calendar_id", "google_color_id",
+                  "google_visibility", "google_sync_enabled"):
+            if f in data:
+                setattr(self.group, f, data[f])
+        self.accept()
+
+    def on_group_save_failed(self, message: str):
+        self._stop_save_worker()
+        self.save_button.setEnabled(True)
+        self.status_label.setStyleSheet("color: red;")
+        self.status_label.setText(f"Не удалось сохранить: {message}")
+
+    def _stop_save_worker(self):
+        thread = getattr(self, "_save_thread", None)
+        worker = getattr(self, "_save_worker", None)
+        if thread is None:
+            return
+        thread.quit()
+        thread.wait()
+        thread.deleteLater()
+        if worker is not None:
+            worker.deleteLater()
+        self._save_thread = None
+        self._save_worker = None
 
     # =========================================================
     # ACCESS
@@ -393,6 +525,8 @@ class LegendWidget(QWidget):
                 result = edit.exec()
                 print(result)
                 print(f"click edit on event type: {group.id}")
+                if result == QDialog.Accepted:
+                    self.refresh()
 
             edit_button = QToolButton(self)
             icon = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)

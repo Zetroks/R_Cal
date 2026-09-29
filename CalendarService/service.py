@@ -117,3 +117,12 @@ class EventRepository:
 
     def get_my_access(self) -> dict:
         return self.GET("/my_access")
+
+    def get_google_calendars(self) -> list:
+        return self.GET("/google_calendars").get("calendars", [])
+
+    def update_event_type(self, payload: dict) -> dict:
+        return self.POST("/event_type", json=payload)
+
+    def sync_group(self, type_id: int) -> dict:
+        return self.POST("/sync_group", json={"type_id": type_id})

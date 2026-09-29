@@ -102,3 +102,18 @@ def upsert_event(dto: dto_models.EventUpsertDTO, current_user=Depends(get_curren
             return repo.create_event(dto, current_user)
         else:
             return repo.update_event(dto, current_user)
+
+
+@app.post("/event_type")
+def upsert_event_type(dto: dto_models.EventTypeUpsertDTO, current_user=Depends(get_current_user)):
+    return repo.update_event_type(dto, current_user)
+
+
+@app.post("/sync_group")
+def sync_group(dto: dto_models.SyncGroupDTO, current_user=Depends(get_current_user)):
+    return repo.sync_group_to_google(dto.type_id, current_user)
+
+
+@app.get("/google_calendars")
+def google_calendars(current_user=Depends(get_current_user)):
+    return repo.get_google_calendars()

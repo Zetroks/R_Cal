@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 
 from . import database_models
+from . import google_sync
 import logging
 
 from datetime import date
@@ -198,6 +199,7 @@ class EventRepository:
             session.add(obj)
             session.commit()
             session.refresh(obj)
+            self._google_after_write(dto.kind, obj, session)
             return obj
 
     def delete_event(self, dto: dto_models.EventUpsertDTO, user: database_models.User) -> dict:
@@ -218,8 +220,10 @@ class EventRepository:
                 if not obj:
                     raise Exception("Version conflict or not found")
                 self._track_history_object(obj, session)
+                gid, tid = obj.google_event_id, obj.type_id
                 session.delete(obj)
                 session.flush()
+                self._google_after_delete(dto.kind, gid, tid)
 
                 return {"status": "deleted", "id": dto.id}
 
@@ -235,8 +239,10 @@ class EventRepository:
             if not obj:
                 raise Exception("Version conflict or not found")
             self._track_history_object(obj, session)
+            gid, tid = obj.google_event_id, obj.type_id
             session.delete(obj)
             session.flush()
+            self._google_after_delete(dto.kind, gid, tid)
 
             return {"status": "deleted", "id": dto.id}
 
@@ -277,8 +283,88 @@ class EventRepository:
 
             session.commit()
             session.refresh(obj)
+            self._google_after_write(dto.kind, obj, session)
 
             return obj
+
+    def update_event_type(self, dto, user: database_models.User) -> dict:
+        with self.session_scope() as session:
+            obj = session.get(EventType, dto.id)
+            if not obj:
+                raise HTTPException(status_code=404, detail="EventType not found")
+            if not user.is_admin:
+                editable = self.get_user_editable(user, session=session)
+                if dto.id not in editable:
+                    raise HTTPException(status_code=403, detail="Not enough access")
+            old_enabled = bool(obj.google_sync_enabled)
+            old_target = obj.google_calendar_id or ""
+            if dto.name is not None:
+                obj.name = dto.name
+            if dto.color is not None:
+                obj.color = dto.color
+            if dto.google_calendar_id is not None:
+                obj.google_calendar_id = dto.google_calendar_id.strip() or None
+            if dto.google_color_id is not None:
+                obj.google_color_id = dto.google_color_id.strip() or None
+            if dto.google_visibility is not None:
+                obj.google_visibility = dto.google_visibility.strip() or None
+            if dto.google_sync_enabled is not None:
+                obj.google_sync_enabled = dto.google_sync_enabled
+            obj.version = (obj.version or 0) + 1
+            session.commit()
+            session.refresh(obj)
+            need_backfill = bool(obj.google_sync_enabled) and (
+                not old_enabled or (obj.google_calendar_id or "") != old_target
+            )
+            type_id = obj.id
+        stats = None
+        if need_backfill:
+            stats = self.sync_group_to_google(type_id, user)
+        with self.session_scope() as session:
+            obj = session.get(EventType, type_id)
+            data = serialize_event(obj, [])
+        return {"event_type": data, "sync": stats}
+
+    def sync_group_to_google(self, type_id: int, user: database_models.User) -> dict:
+        with self.session_scope() as session:
+            event_type = session.get(EventType, type_id)
+            if not event_type:
+                raise HTTPException(status_code=404, detail="EventType not found")
+            if not user.is_admin:
+                editable = self.get_user_editable(user, session=session)
+                if type_id not in editable:
+                    raise HTTPException(status_code=403, detail="Not enough access")
+            if not google_sync.is_sync_enabled(event_type):
+                return {"target": None, "inserted": 0, "updated": 0, "errors": ["sync not enabled"]}
+            target = google_sync.resolve_target_calendar(event_type)
+            if not target:
+                raise HTTPException(status_code=400, detail="No target Google calendar")
+            annual = session.query(AnnualEvent).filter(AnnualEvent.type_id == type_id).all()
+            daily = session.query(DailyEvent).filter(DailyEvent.type_id == type_id).all()
+            inserted = updated = 0
+            errors: list = []
+            for kind, obj in [("annual", o) for o in annual] + [("daily", o) for o in daily]:
+                try:
+                    was = bool(obj.google_event_id)
+                    obj.google_event_id = google_sync.push_event(kind, obj, event_type)
+                    if was:
+                        updated += 1
+                    else:
+                        inserted += 1
+                except Exception as exc:  # noqa: BLE001 - per-event errors must not abort backfill
+                    errors.append(f"{kind}:{obj.id}: {exc}")
+                    if len(errors) > 20:
+                        errors.append("...truncated")
+                        break
+            session.commit()
+            return {"target": target, "inserted": inserted, "updated": updated, "errors": errors}
+
+    @staticmethod
+    def get_google_calendars() -> dict:
+        try:
+            return {"calendars": google_sync.list_calendars()}
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Google unavailable: {exc}")
 
     def get_user(self, username: str, session=None) -> database_models.User | None:
         def get(_session):
@@ -332,6 +418,31 @@ class EventRepository:
             with self.session_scope() as session:
                 return get(session)
         return get(session)
+
+    @staticmethod
+    def _google_after_write(kind: str, obj, session) -> None:
+        try:
+            event_type = session.get(EventType, obj.type_id)
+            if event_type is None or not google_sync.is_sync_enabled(event_type):
+                return
+            gid = google_sync.push_event(kind, obj, event_type)
+            if gid != obj.google_event_id:
+                obj.google_event_id = gid
+                session.commit()
+        except Exception:
+            logging.exception("Google sync failed for %s id=%s", kind, getattr(obj, "id", None))
+
+    def _google_after_delete(self, kind: str, google_event_id: str | None, type_id: int) -> None:
+        if not google_event_id:
+            return
+        try:
+            with self.session_scope() as session:
+                event_type = session.get(EventType, type_id)
+                target = google_sync.resolve_target_calendar(event_type) if event_type else None
+            if target:
+                google_sync.delete_google_event(target, google_event_id)
+        except Exception:
+            logging.exception("Google unsync failed for %s", google_event_id)
 
     @staticmethod
     def _track_history_object(obj, session):

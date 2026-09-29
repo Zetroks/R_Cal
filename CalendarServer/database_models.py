@@ -10,7 +10,9 @@ Base = declarative_base()
 
 class EventType(Base):
     __tablename__ = "event_types"
-    __serializable__ = ["id", "name", "color", "version"]
+    __serializable__ = ["id", "name", "color", "version",
+                        "google_calendar_id", "google_color_id",
+                        "google_visibility", "google_sync_enabled"]
     __restricted__ = []
     id = Column(Integer, primary_key=True)
     name = Column(String)

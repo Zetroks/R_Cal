@@ -40,3 +40,17 @@ class GROUP_ACCESS(AccessEnum):
 
 available_access_names = [k.value for k in GROUP_ACCESS if k != GROUP_ACCESS.NONE]
 
+
+class EventTypeUpsertDTO(BaseModel):
+    id                  : int
+    name                : str | None    = None
+    color               : str | None    = None
+    google_calendar_id  : str | None    = None
+    google_color_id     : str | None    = None
+    google_visibility   : str | None    = None
+    google_sync_enabled : bool | None   = None
+
+
+class SyncGroupDTO(BaseModel):
+    type_id: int
+

@@ -25,6 +25,10 @@ class EventGroup(BaseModel):
     name        :str
     color       :str
     version     :int            = -1
+    google_calendar_id  :str | None  = None
+    google_color_id     :str | None  = None
+    google_visibility   :str | None  = None
+    google_sync_enabled :bool        = False
 
     @classmethod
     def set_access_resolver(cls, resolver: GroupAccessResolver) -> None:
