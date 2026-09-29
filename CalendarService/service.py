@@ -30,17 +30,14 @@ class EventRepository:
         self.username = None
         self.password = None
 
-        user = "Roksi"
-        self.username = {
-            "TestUser": "TestUser",
-            "Roksi": "Roksi",
-            "guest": "guest"
-        }.get(user)
-        self.password = {
-            "TestUser": "TestUser",
-            "Roksi": "***REMOVED***",
-            "guest": "guest"
-        }.get(user)
+    @classmethod
+    def configure(cls, server_url: str, username: str | None, password: str | None):
+        """Задать сервер и учётные данные (вызывает диалог логина)."""
+        cls.DATABASE_URL = server_url.rstrip("/")
+        inst = cls.get()
+        inst.username = username
+        inst.password = password
+        inst.access_token = None
 
     def login(self, username, password):
         self.username = username
@@ -62,6 +59,8 @@ class EventRepository:
         }
 
     def _handle_401(self, method, path, **kwargs):
+        if not self.username or not self.password:
+            raise RuntimeError("Not authenticated and no credentials stored")
         print("Token expired, relogin")
 
         self.login(self.username, self.password)

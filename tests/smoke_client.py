@@ -1,7 +1,10 @@
 """Ручной smoke-тест десктоп-клиента (нужен живой сервер).
 
-Запуск (из корня репо, сервер отдельно, например на 8011):
+Диалог логина здесь обходится: учётка задаётся через env
+(в репозитории паролей нет):
     $env:CAL_SERVER_URL="http://127.0.0.1:8011"
+    $env:CAL_LOGIN="..."
+    $env:CAL_PASSWORD="..."
     $env:QT_QPA_PLATFORM="offscreen"
     .\\.venv\\Scripts\\python.exe tests/smoke_client.py
 
@@ -12,17 +15,22 @@
 import os
 import sys
 
-os.environ.setdefault("CAL_SERVER_URL", "http://127.0.0.1:8001")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 
+from CalendarService.service import EventRepository
 from CalendarDesktop.MainWindow import MainWindow
 from CalendarDesktop.MultiFields.loader import load_all_fields
 
 
 def main():
+    EventRepository.configure(
+        os.environ.get("CAL_SERVER_URL", "http://127.0.0.1:8001"),
+        os.environ.get("CAL_LOGIN", "") or None,
+        os.environ.get("CAL_PASSWORD", "") or None,
+    )
     load_all_fields()
     app = QApplication(sys.argv)
     w = MainWindow()
