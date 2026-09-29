@@ -67,6 +67,19 @@ def _str_or_empty(v):
     return "" if v in (None, "None") else v
 
 
+class CalListWorker(QObject):
+    finished = pyqtSignal(object)  # list of {id, summary, primary}
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            items = service.EventRepository.get().get_google_calendars()
+        except Exception as exc:
+            self.failed.emit(str(exc))  # type: ignore
+            return
+        self.finished.emit(items)  # type: ignore
+
+
 class GroupSaveWorker(QObject):
     finished = pyqtSignal(object)  # response dict
     failed = pyqtSignal(str)
@@ -239,10 +252,14 @@ class GroupEditWidget(QDialog):
         self.grid.addWidget(self.gsync_check, 4, 1, 1, 2)
 
         self.grid.addWidget(QLabel("Calendar ID"), 5, 0)
-        self.gcal_edit = QLineEdit()
-        self.gcal_edit.setText(_str_or_empty(group.google_calendar_id))
-        self.gcal_edit.setPlaceholderText("пусто = календарь по умолчанию")
-        self.grid.addWidget(self.gcal_edit, 5, 1, 1, 2)
+        self.gcal_combo = QComboBox()
+        self.gcal_combo.setEditable(True)
+        self.gcal_combo.setPlaceholderText("пусто = календарь по умолчанию")
+        self._pending_cal_id = _str_or_empty(group.google_calendar_id)
+        if self._pending_cal_id:
+            self.gcal_combo.addItem(self._pending_cal_id, self._pending_cal_id)
+        self.grid.addWidget(self.gcal_combo, 5, 1, 1, 2)
+        self._load_calendars()
 
         self.grid.addWidget(QLabel("Color"), 6, 0)
         self.gcolor_combo = QComboBox()
@@ -314,12 +331,65 @@ class GroupEditWidget(QDialog):
     # GROUP SAVE (server + google sync settings)
     # =========================================================
 
+    def _load_calendars(self):
+        self._cal_thread = QThread()
+        self._cal_worker = CalListWorker()
+        self._cal_worker.moveToThread(self._cal_thread)
+        self._cal_thread.started.connect(self._cal_worker.run)  # type: ignore
+        self._cal_worker.finished.connect(self.on_cal_list)  # type: ignore
+        self._cal_worker.failed.connect(self.on_cal_list_failed)  # type: ignore
+        self._cal_thread.start()
+
+    def on_cal_list(self, items):
+        self._stop_cal_worker()
+        current = self.gcal_combo.currentText()
+        self.gcal_combo.clear()
+        for c in items or []:
+            label = c.get("summary") or c.get("id")
+            self.gcal_combo.addItem(label, c.get("id"))
+        if self._pending_cal_id:
+            idx = self.gcal_combo.findData(self._pending_cal_id)
+            if idx >= 0:
+                self.gcal_combo.setCurrentIndex(idx)
+            else:
+                self.gcal_combo.addItem(self._pending_cal_id, self._pending_cal_id)
+                self.gcal_combo.setCurrentIndex(self.gcal_combo.count() - 1)
+        elif current:
+            self.gcal_combo.setCurrentText(current)
+
+    def on_cal_list_failed(self, message: str):
+        self._stop_cal_worker()
+        self.status_label.setStyleSheet("color: red;")
+        self.status_label.setText(f"Не удалось загрузить календари Google (ID можно вписать вручную): {message}")
+
+    def _stop_cal_worker(self):
+        thread = getattr(self, "_cal_thread", None)
+        worker = getattr(self, "_cal_worker", None)
+        if thread is None:
+            return
+        thread.quit()
+        thread.wait()
+        thread.deleteLater()
+        if worker is not None:
+            worker.deleteLater()
+        self._cal_thread = None
+        self._cal_worker = None
+
+    def _selected_calendar_id(self) -> str:
+        text = self.gcal_combo.currentText().strip()
+        idx = self.gcal_combo.findText(text)
+        if idx >= 0:
+            data = self.gcal_combo.itemData(idx)
+            if data:
+                return str(data)
+        return text
+
     def save_group(self):
         payload = {
             "id": self.group.id,
             "name": self.server_name_edit.text().strip() or self.group.name,
             "color": self.server_color,
-            "google_calendar_id": self.gcal_edit.text().strip(),
+            "google_calendar_id": self._selected_calendar_id(),
             "google_color_id": self.gcolor_combo.currentData(),
             "google_visibility": self.gvis_combo.currentData(),
             "google_sync_enabled": self.gsync_check.isChecked(),
