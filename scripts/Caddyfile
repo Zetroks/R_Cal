@@ -1,0 +1,14 @@
+# Caddy: один домен на всё. Положить в /etc/caddy/Caddyfile на VDS.
+# roksical.online/       -> web-клиент (8002)
+# roksical.online/api/*  -> API (8001), префикс срезается
+# HTTPS выпускается автоматически (нужны открытые 80/443).
+
+roksical.online {
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:8001
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8002
+	}
+}
