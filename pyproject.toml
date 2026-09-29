@@ -19,6 +19,7 @@ packages = [
     "CalendarDesktop",
     "CalendarDesktop.MultiFields",
     "CalendarWeb",
+    "CalendarBot",
 ]
 
 [tool.black]
