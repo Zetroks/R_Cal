@@ -2,6 +2,8 @@
 # Обновление прод-сервера. Выполняется ботом (/update) или руками на VDS.
 # Каталог репо = родитель scripts/. Нужны user-юниты calendar-server/calendar-web.
 set -e
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 cd "$(dirname "$0")/.."
 
 echo "== git pull =="

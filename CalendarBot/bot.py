@@ -768,6 +768,50 @@ async def card_delete_no(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await show_card(query, update.effective_user.id, kind, eid, edit=True)
 
 
+def _run_update():
+    if os.environ.get("UPDATE_SSH_HOST"):
+        return _run_update_remote()
+    import subprocess
+
+    try:
+        p = subprocess.run(["sh", UPDATE_SCRIPT], capture_output=True,
+                           text=True, timeout=600)
+        out = (p.stdout + "\n" + p.stderr).strip()
+        return p.returncode, out[-3000:]
+    except Exception as exc:
+        return -1, str(exc)
+
+
+def _run_update_remote():
+    """Апдейт удалённого бокса по SSH (forced command, ключа хватает только на скрипт)."""
+    import paramiko
+
+    host = os.environ["UPDATE_SSH_HOST"]
+    user = os.environ.get("UPDATE_SSH_USER", "updater")
+    key_file = os.environ.get("UPDATE_SSH_KEY_FILE", "")
+    if not key_file or not os.path.exists(key_file):
+        return -1, "UPDATE_SSH_KEY_FILE missing"
+    try:
+        pkey = paramiko.Ed25519Key.from_private_key_file(key_file)
+    except Exception:
+        try:
+            pkey = paramiko.RSAKey.from_private_key_file(key_file)
+        except Exception as exc:
+            return -1, f"bad key: {exc}"
+    cli = paramiko.SSHClient()
+    cli.set_missing_host_key_policy(paramiko.RejectPolicy())
+    try:
+        cli.connect(host, username=user, pkey=pkey, timeout=30,
+                    allow_agent=False, look_for_keys=False)
+        _, stdout, _ = cli.exec_command("update", timeout=600)
+        rc = stdout.channel.recv_exit_status()
+        return rc, stdout.read().decode("utf-8", "replace").strip()[-3000:]
+    except Exception as exc:
+        return -1, str(exc)
+    finally:
+        cli.close()
+
+
 # ---------------- self update (admin only) ----------------
 
 async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -813,7 +857,7 @@ async def update_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as exc:
             return -1, str(exc)
 
-    code, out = await asyncio.to_thread(_run)
+    code, out = await asyncio.to_thread(_run_update)
     after = await asyncio.to_thread(_version)
     await query.message.reply_text(
         f"Готово (код {code}). Было {before}, стало {after}.\n```\n{out}\n```",
