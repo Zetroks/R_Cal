@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Календарь</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login-view" class="center-wrap">
+  <form id="login-form" class="card" autocomplete="on">
+    <h2>Вход — Календарь</h2>
+    <label>Сервер
+      <input id="login-server" type="text" value="http://127.0.0.1:8011" placeholder="http://127.0.0.1:8011">
+    </label>
+    <label>Пользователь
+      <input id="login-user" type="text" autocomplete="username">
+    </label>
+    <label>Пароль
+      <input id="login-pass" type="password" autocomplete="current-password">
+    </label>
+    <label class="row">
+      <input id="login-remember" type="checkbox" checked> Запомнить пароль
+    </label>
+    <div id="login-error" class="error"></div>
+    <button type="submit" id="login-btn">Войти</button>
+  </form>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app-view" hidden>
+  <header id="topbar">
+    <button id="year-prev" title="Предыдущий год">&lt;</button>
+    <h2 id="year-label">2026</h2>
+    <button id="year-next" title="Следующий год">&gt;</button>
+    <span id="user-label"></span>
+    <button id="logout-btn">Выйти</button>
+  </header>
+
+  <div id="main">
+    <aside id="legend">
+      <div class="legend-title">Группы</div>
+      <div id="legend-list"></div>
+    </aside>
+
+    <section id="year-grid"></section>
+
+    <aside id="editor">
+      <div class="editor-title" id="editor-title">День не выбран</div>
+      <div id="editor-add" hidden>
+        <button id="add-daily-btn">+ Daily</button>
+        <button id="add-annual-btn">+ Annual</button>
+      </div>
+      <div id="editor-list"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- hover tooltip -->
+<div id="tooltip" hidden></div>
+
+<!-- ============ EVENT MODAL ============ -->
+<div id="event-modal" class="modal-back" hidden>
+  <div class="card modal">
+    <h3 id="event-modal-title">Событие</h3>
+    <div id="event-form"></div>
+    <div id="event-error" class="error"></div>
+    <div class="btn-row">
+      <button id="event-save">Сохранить</button>
+      <button id="event-delete" class="danger">Удалить</button>
+      <button id="event-cancel">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GROUP MODAL ============ -->
+<div id="group-modal" class="modal-back" hidden>
+  <div class="card modal">
+    <h3>Группа</h3>
+    <label>Название <input id="group-name" type="text"></label>
+    <label>Цвет <input id="group-color" type="color"></label>
+    <label class="row"><input id="group-sync" type="checkbox"> Синхронизация с Google</label>
+    <label>Google Calendar ID
+      <input id="group-cal" type="text" placeholder="пусто = календарь по умолчанию">
+    </label>
+    <label>Google цвет <select id="group-gcolor"></select></label>
+    <label>Google visibility
+      <select id="group-gvis">
+        <option value="">default</option>
+        <option value="public">public</option>
+        <option value="private">private</option>
+      </select>
+    </label>
+    <div id="group-error" class="error"></div>
+    <div class="btn-row">
+      <button id="group-save">Сохранить</button>
+      <button id="group-cancel">Отмена</button>
+    </div>
+    <div id="group-sync-status" class="muted"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

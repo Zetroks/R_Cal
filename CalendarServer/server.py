@@ -1,9 +1,11 @@
 # server.py
 
 import calendar
+import os
 from datetime import date
 from .database import EventRepository
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import HTTPException
 from fastapi import Depends
@@ -11,6 +13,22 @@ from .authorization import authenticate_user, create_access_token, get_current_u
 from CalendarService import dto_models
 
 app = FastAPI()
+
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get(
+        "CAL_CORS_ORIGINS", "http://127.0.0.1:8002,http://localhost:8002"
+    ).split(",")
+    if o.strip()
+]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
 repo = EventRepository.get()
 
 
