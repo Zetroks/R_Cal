@@ -805,6 +805,7 @@ def _run_update_remote():
         except Exception as exc:
             return -1, f"bad key: {exc}"
     cli = paramiko.SSHClient()
+    cli.load_system_host_keys()
     cli.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
         cli.connect(host, username=user, pkey=pkey, timeout=30,
