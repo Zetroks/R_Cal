@@ -25,6 +25,24 @@ class InitWorker(QObject):
         self.finished.emit(groups, access)  # type: ignore
 
 
+class PollWorker(QObject):
+    finished = pyqtSignal(object)  # response dict
+    failed = pyqtSignal(str)
+
+    def __init__(self, since: str, year: int):
+        super().__init__()
+        self.since = since
+        self.year = year
+
+    def run(self):
+        try:
+            data = service.EventRepository.get().get_updates(self.since, self.year)
+        except Exception as exc:
+            self.failed.emit(str(exc))  # type: ignore
+            return
+        self.finished.emit(data)  # type: ignore
+
+
 class CollectYearWorker(QObject):
     __instance__ = None
 

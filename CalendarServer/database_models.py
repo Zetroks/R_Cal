@@ -132,5 +132,15 @@ class UserCanEdit(Base):
     type_id = Column(Integer, ForeignKey("event_types.id"), primary_key=True)
 
 
+class EventChangeLog(Base):
+    __tablename__ = "event_change_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String)  # annual/daily
+    event_id = Column(Integer, index=True)
+    action = Column(String)  # upsert/delete
+    created_at = Column(DateTime, default=func.now())
+
+
 EventModel: TypeAlias = DailyEvent | AnnualEvent
 AnyEventModel: TypeAlias = DailyEvent | AnnualEvent | EventType | UserCanEdit | EventTypeAccess

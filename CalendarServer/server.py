@@ -135,3 +135,8 @@ def sync_group(dto: dto_models.SyncGroupDTO, current_user=Depends(get_current_us
 @app.get("/google_calendars")
 def google_calendars(current_user=Depends(get_current_user)):
     return repo.get_google_calendars()
+
+
+@app.get("/updates")
+def get_updates(since: str = "", year: int = 0, current_user=Depends(get_current_user)):
+    return repo.get_updates(since, year, current_user)

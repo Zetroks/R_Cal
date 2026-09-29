@@ -405,6 +405,55 @@ class YearWidget(QWidget):
         for cal in self.calendars:
             cal.invalidate_cache()
 
+    def apply_updates(self, updates) -> bool:
+        """Применить дельты /updates к кешу года. True если что-то поменялось."""
+        yd = cache.get().year_data.get(self.year)
+        if yd is None:
+            return False
+        changed = False
+        for u in updates or []:
+            kind = u.get("kind")
+            eid = u.get("id")
+            if kind not in ("annual", "daily"):
+                continue
+            for container in yd.Events.values():
+                lst = container.annual if kind == "annual" else container.daily
+                kept = [e for e in lst if e.id != eid]
+                if len(kept) != len(lst):
+                    lst[:] = kept
+                    changed = True
+            if u.get("deleted"):
+                continue
+            data = u.get("data")
+            if not data:
+                continue
+            try:
+                if kind == "annual":
+                    obj = models.AnnualEvent(**data)
+                else:
+                    obj = models.DailyEvent(**data)
+            except Exception:
+                continue
+            if kind == "daily":
+                try:
+                    day = date(self.year, obj.month, obj.day)
+                except ValueError:
+                    continue
+                if day in yd.Events:
+                    yd.Events[day].daily.append(obj)
+                    changed = True
+            else:
+                sd = obj.start_date.date() if isinstance(obj.start_date, datetime) else obj.start_date
+                ed = obj.end_date.date() if isinstance(obj.end_date, datetime) else obj.end_date
+                for d in models.date_iterator(sd, ed):
+                    if d.year == self.year and d in yd.Events:
+                        yd.Events[d].annual.append(obj)
+                changed = True
+        if changed:
+            for cal in self.calendars:
+                cal.invalidate_cache()
+        return changed
+
     def start_show_year(self, year: int):
         self.collect_year_thread = QThread()
         try:
@@ -419,6 +468,7 @@ class YearWidget(QWidget):
 
     def __init__(self, year: int):
         self.collect_year_thread = None
+        self.year = year
         super().__init__()
 
         layout = QGridLayout(self)

@@ -120,6 +120,26 @@ class EventEditorPanel(QWidget):
         for e in events:
             self._add_to_box(box, e, widget_cls)
 
+    def _iter_event_widgets(self):
+        for box in (self.daily_box, self.annual_box):
+            for i in range(box.count()):
+                w = box.widget(i)
+                if isinstance(w, BaseEventWidget):
+                    yield w
+
+    def has_unsaved(self) -> bool:
+        return any(w._dirty for w in self._iter_event_widgets())
+
+    def save_all(self):
+        for w in self._iter_event_widgets():
+            if w._dirty:
+                w.save()
+
+    def discard_all(self):
+        for w in self._iter_event_widgets():
+            if w._dirty:
+                w.discard()
+
 
 class BaseEventWidget(QWidget):
     # self, event
@@ -138,6 +158,7 @@ class BaseEventWidget(QWidget):
         super().__init__(parent)
         # self.on_title_changed = None
         self.event = event
+        self._dirty = False
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(4, 0, 4, 0)
         self.layout.setAlignment(Qt.AlignTop)
@@ -163,13 +184,34 @@ class BaseEventWidget(QWidget):
             self._loading_now_ = True
             self.load(event)
             self._loading_now_ = False
+            if event.id is None:
+                self.mark_dirty()
 
         self.layout.addStretch()
 
     def some_field_changed(self):
         if not self._loading_now_:
-            self.save_btn.setStyleSheet("background-color: red; color: white;")
-            QTimer.singleShot(200, lambda: self.save_btn.setStyleSheet(""))
+            self.mark_dirty()
+
+    def mark_dirty(self):
+        self._dirty = True
+        btn = getattr(self, "save_btn", None)
+        if btn is not None:
+            btn.setStyleSheet("background-color: red; color: white;")
+
+    def clear_dirty(self):
+        self._dirty = False
+        btn = getattr(self, "save_btn", None)
+        if btn is not None:
+            btn.setStyleSheet("")
+
+    def discard(self):
+        self._loading_now_ = True
+        try:
+            self.load(self.event)
+        finally:
+            self._loading_now_ = False
+        self.clear_dirty()
     def GetFields(self) -> List[QWidget]:
         return []
 
@@ -186,6 +228,7 @@ class BaseEventWidget(QWidget):
         self._loading_now_ = True
         self.load(self.event)
         self._loading_now_ = False
+        self.clear_dirty()
         self.on_event_changed.emit(self, self.event)  # type: ignore
 
     def delete_event(self):

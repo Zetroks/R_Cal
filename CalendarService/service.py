@@ -126,3 +126,6 @@ class EventRepository:
 
     def sync_group(self, type_id: int) -> dict:
         return self.POST("/sync_group", json={"type_id": type_id})
+
+    def get_updates(self, since: str, year: int) -> dict:
+        return self.GET("/updates", since=since, year=year)

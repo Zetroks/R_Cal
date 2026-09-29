@@ -4,9 +4,9 @@ from . import database_models
 from . import google_sync
 import logging
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from sqlalchemy import create_engine, and_, or_
+from sqlalchemy import create_engine, and_, or_, func
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 from .database_models import AnnualEvent, DailyEvent, EventType, EventTypeAccess
@@ -199,8 +199,12 @@ class EventRepository:
             session.add(obj)
             session.commit()
             session.refresh(obj)
+            session.add(database_models.EventChangeLog(
+                kind=dto.kind, event_id=obj.id, action="upsert"))
+            session.commit()
             self._google_after_write(dto.kind, obj, session)
-            return obj
+            return {"status": "created", "id": obj.id, "version": obj.version,
+                    "google_event_id": obj.google_event_id}
 
     def delete_event(self, dto: dto_models.EventUpsertDTO, user: database_models.User) -> dict:
         model = {
@@ -223,6 +227,8 @@ class EventRepository:
                 gid, tid = obj.google_event_id, obj.type_id
                 session.delete(obj)
                 session.flush()
+                session.add(database_models.EventChangeLog(
+                    kind=dto.kind, event_id=dto.id, action="delete"))
                 self._google_after_delete(dto.kind, gid, tid)
 
                 return {"status": "deleted", "id": dto.id}
@@ -242,6 +248,8 @@ class EventRepository:
             gid, tid = obj.google_event_id, obj.type_id
             session.delete(obj)
             session.flush()
+            session.add(database_models.EventChangeLog(
+                kind=dto.kind, event_id=dto.id, action="delete"))
             self._google_after_delete(dto.kind, gid, tid)
 
             return {"status": "deleted", "id": dto.id}
@@ -283,9 +291,13 @@ class EventRepository:
 
             session.commit()
             session.refresh(obj)
+            session.add(database_models.EventChangeLog(
+                kind=dto.kind, event_id=obj.id, action="upsert"))
+            session.commit()
             self._google_after_write(dto.kind, obj, session)
 
-            return obj
+            return {"status": "updated", "id": obj.id, "version": obj.version,
+                    "google_event_id": obj.google_event_id}
 
     def update_event_type(self, dto, user: database_models.User) -> dict:
         with self.session_scope() as session:
@@ -371,6 +383,66 @@ class EventRepository:
             return {"calendars": google_sync.list_calendars()}
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Google unavailable: {exc}")
+
+    def get_updates(self, since: str, year: int, user: database_models.User) -> dict:
+        # Всё время — UTC, чтобы не зависеть от часового пояса клиента.
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now_s = now.strftime("%Y-%m-%d %H:%M:%S")
+        if not since:
+            return {"updates": [], "server_time": now_s, "full_reload": True}
+        with self.session_scope(commit=True) as session:
+            cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+            session.query(database_models.EventChangeLog).filter(
+                database_models.EventChangeLog.created_at < cutoff
+            ).delete(synchronize_session=False)
+            over = session.query(database_models.EventChangeLog.id).order_by(
+                database_models.EventChangeLog.id.desc()).offset(5000).all()
+            if over:
+                session.query(database_models.EventChangeLog).filter(
+                    database_models.EventChangeLog.id.in_([r[0] for r in over])
+                ).delete(synchronize_session=False)
+            oldest = session.query(database_models.EventChangeLog.created_at).order_by(
+                database_models.EventChangeLog.id.asc()).first()
+            if oldest and oldest[0] and str(oldest[0]) > since:
+                return {"updates": [], "server_time": now_s, "full_reload": True}
+            rows = session.query(database_models.EventChangeLog).filter(
+                database_models.EventChangeLog.created_at >= since
+            ).order_by(database_models.EventChangeLog.id.asc()).limit(500).all()
+
+            if user.is_admin:
+                allowed = restricted = None
+            else:
+                access_map = self.get_user_access(user, session=session)
+                allowed = {tid for tid, a in access_map.items()
+                           if a in dto_models.available_access_names}
+                restricted = {tid for tid, a in access_map.items() if a == "restricted"}
+
+            jan1 = date(year, 1, 1) if year else None
+            dec31 = date(year, 12, 31) if year else None
+            updates = []
+            for row in rows:
+                ts = str(row.created_at)
+                if row.action == "delete":
+                    updates.append({"kind": row.kind, "id": row.event_id,
+                                    "deleted": True, "ts": ts})
+                    continue
+                model = AnnualEvent if row.kind == "annual" else DailyEvent
+                obj = session.get(model, row.event_id)
+                if obj is None:
+                    updates.append({"kind": row.kind, "id": row.event_id,
+                                    "deleted": True, "ts": ts})
+                    continue
+                if allowed is not None and obj.type_id not in allowed:
+                    updates.append({"kind": row.kind, "id": row.event_id,
+                                    "deleted": True, "ts": ts})
+                    continue
+                if year and row.kind == "annual":
+                    if obj.end_date.date() < jan1 or obj.start_date.date() > dec31:
+                        continue
+                mask = restricted if (restricted is not None and obj.type_id in restricted) else []
+                updates.append({"kind": row.kind, "id": row.event_id,
+                                "data": serialize_event(obj, mask), "ts": ts})
+            return {"updates": updates, "server_time": now_s, "full_reload": False}
 
     def get_user(self, username: str, session=None) -> database_models.User | None:
         def get(_session):
