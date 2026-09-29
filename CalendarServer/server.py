@@ -11,6 +11,10 @@ from fastapi import HTTPException
 from fastapi import Depends
 from .authorization import authenticate_user, create_access_token, get_current_user, get_bot_admin
 from CalendarService import dto_models
+from CalendarService import version as cal_version
+
+INSTALLER_URL = os.environ.get(
+    "INSTALLER_URL", "https://github.com/Zetroks/R_Cal/releases")
 
 app = FastAPI()
 
@@ -61,6 +65,16 @@ def read_me(current_user: dict = Depends(get_current_user)):
 @app.get("/")
 def root():
     return {"status": "ok"}
+
+
+@app.get("/version")
+def get_version():
+    return {
+        "protocol": cal_version.PROTOCOL,
+        "build": cal_version.BUILD,
+        "min_protocol": os.environ.get("MIN_PROTOCOL", cal_version.PROTOCOL),
+        "installer_url": INSTALLER_URL,
+    }
 
 
 @app.get("/day")

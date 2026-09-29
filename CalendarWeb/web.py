@@ -17,6 +17,15 @@ from fastapi.staticfiles import StaticFiles
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="CalendarWeb")
+
+
+@app.get("/app-version")
+def app_version():
+    from CalendarService import version as cal_version
+
+    return {"protocol": cal_version.PROTOCOL, "build": cal_version.BUILD}
+
+
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 

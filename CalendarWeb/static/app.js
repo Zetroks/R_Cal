@@ -493,6 +493,18 @@ async function reloadYear() {
 }
 
 async function enterApp() {
+  const [srv, mine] = await Promise.all([
+    fetch(S.api + "/version").then((r) => r.json()),
+    fetch("app-version").then((r) => r.json()),
+  ]);
+  if ((mine.protocol || "") < (srv.min_protocol || "")) {
+    document.body.innerHTML =
+      `<div class="center-wrap"><div class="card"><h2>Нужно обновление</h2>` +
+      `<p>Клиент (протокол ${mine.protocol}) несовместим с сервером ` +
+      `(требуется >= ${srv.min_protocol}).</p>` +
+      `<p><a href="${srv.installer_url}">Скачать новую версию</a></p></div></div>`;
+    return;
+  }
   $("login-view").hidden = true;
   $("app-view").hidden = false;
   $("user-label").textContent = S.user + " @ " + S.api;

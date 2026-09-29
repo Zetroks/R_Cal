@@ -1,0 +1,17 @@
+[Unit]
+Description=R_Cal web client
+After=network.target calendar-server.service
+Wants=calendar-server.service
+
+[Service]
+Type=simple
+# user-юнит: положить в ~/.config/systemd/user/, поправить путь
+WorkingDirectory=/opt/r_cal
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/r_cal/.venv/bin/python -m CalendarWeb.web
+Restart=always
+RestartSec=5
+Environment=CAL_WEB_PORT=8002
+
+[Install]
+WantedBy=default.target

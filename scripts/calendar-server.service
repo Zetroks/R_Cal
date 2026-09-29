@@ -1,0 +1,15 @@
+[Unit]
+Description=R_Cal API server
+After=network.target
+
+[Service]
+Type=simple
+# user-юнит: положить в ~/.config/systemd/user/, поправить путь
+WorkingDirectory=/opt/r_cal
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/r_cal/.venv/bin/python -m CalendarServer.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -40,6 +40,10 @@ ADMIN_ID = int(os.environ.get("TELEGRAM_ADMIN_ID") or 0)
 API = os.environ.get("CAL_API_URL", "http://127.0.0.1:8011").rstrip("/")
 INSTALLER_URL = os.environ.get(
     "INSTALLER_URL", "https://github.com/Zetroks/R_Cal/releases")
+UPDATE_SCRIPT = os.environ.get(
+    "UPDATE_SCRIPT",
+    str(Path(__file__).resolve().parent.parent / "scripts" / "update_prod.sh"))
+BOT_UNIT = os.environ.get("BOT_UNIT", "calendar-bot")
 
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_FILE = BASE_DIR / ".pending_seen.json"
@@ -764,6 +768,63 @@ async def card_delete_no(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await show_card(query, update.effective_user.id, kind, eid, edit=True)
 
 
+# ---------------- self update (admin only) ----------------
+
+async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Только для админа.")
+        return
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Да, обновить", callback_data="upd:yes"),
+        InlineKeyboardButton("Нет", callback_data="upd:no"),
+    ]])
+    await update.message.reply_text(
+        "Обновить сервер с гита и перезапустить сервисы?", reply_markup=kb)
+
+
+async def update_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if update.effective_user.id != ADMIN_ID:
+        await query.answer("Только для админа.")
+        return
+    await query.answer()
+    if query.data == "upd:no":
+        await query.edit_message_text("Отмена.")
+        return
+
+    def _version():
+        try:
+            r = _req("GET", "/version", _admin_headers())
+            return r.json().get("build", "?") if r.status_code == 200 else "?"
+        except Exception:
+            return "?"
+
+    before = await asyncio.to_thread(_version)
+    await query.edit_message_text(f"Обновляю (было {before})...")
+
+    def _run():
+        import subprocess
+
+        try:
+            p = subprocess.run(["sh", UPDATE_SCRIPT], capture_output=True,
+                               text=True, timeout=600)
+            out = (p.stdout + "\n" + p.stderr).strip()
+            return p.returncode, out[-3000:]
+        except Exception as exc:
+            return -1, str(exc)
+
+    code, out = await asyncio.to_thread(_run)
+    after = await asyncio.to_thread(_version)
+    await query.message.reply_text(
+        f"Готово (код {code}). Было {before}, стало {after}.\n```\n{out}\n```",
+        parse_mode=None)
+    if code == 0:
+        await query.message.reply_text("Перезапускаю бота...")
+        import subprocess
+
+        subprocess.Popen(["systemctl", "--user", "restart", BOT_UNIT])
+
+
 # ---------------- main ----------------
 
 def build_app():
@@ -776,6 +837,8 @@ def build_app():
     )
     app.add_handler(conv)
     app.add_handler(CommandHandler("week", cmd_week))
+    app.add_handler(CommandHandler("update", cmd_update))
+    app.add_handler(CallbackQueryHandler(update_decision, pattern="^upd:"))
     app.add_handler(MessageHandler(filters.Regex("^\U0001F4C5"), on_menu))
     app.add_handler(MessageHandler(filters.Regex("^\U0001F4E5"), on_menu))
     app.add_handler(CallbackQueryHandler(on_decision, pattern="^(ap|dn):"))
