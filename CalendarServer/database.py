@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from . import database_models
 from . import google_sync
 import logging
+import secrets
 
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -538,6 +539,63 @@ class EventRepository:
                             "status": r.status})
             return {"links": out}
 
+    def register_request(self, telegram_id: int, login: str, name: str | None) -> dict:
+        login = (login or "").strip()
+        if not login or not telegram_id:
+            raise HTTPException(status_code=400, detail="login and telegram_id required")
+        with self.session_scope(commit=True) as session:
+            if session.query(database_models.User).filter(
+                    database_models.User.login == login).first():
+                raise HTTPException(status_code=409, detail="Login taken")
+            if session.query(database_models.User).filter(
+                    database_models.User.telegram_id == telegram_id).first():
+                raise HTTPException(status_code=409, detail="Telegram already registered")
+            dupe = session.query(database_models.PendingUser).filter(
+                database_models.PendingUser.telegram_id == telegram_id).first()
+            if dupe and dupe.status == "pending":
+                return {"id": dupe.id, "status": "pending"}
+            if session.query(database_models.PendingUser).filter(
+                    database_models.PendingUser.login == login,
+                    database_models.PendingUser.status == "pending").first():
+                raise HTTPException(status_code=409, detail="Login requested already")
+            row = database_models.PendingUser(telegram_id=telegram_id, login=login, name=name)
+            session.add(row)
+            session.flush()
+            return {"id": row.id, "status": "pending"}
+
+    def pending_registrations(self) -> dict:
+        with self.session_scope() as session:
+            rows = session.query(database_models.PendingUser).filter(
+                database_models.PendingUser.status == "pending").order_by(
+                database_models.PendingUser.id.asc()).all()
+            return {"pending": [
+                {"id": r.id, "telegram_id": r.telegram_id, "login": r.login,
+                 "name": r.name, "created_at": str(r.created_at)} for r in rows]}
+
+    def approve_registration(self, pending_id: int, approve: bool) -> dict:
+        with self.session_scope(commit=True) as session:
+            row = session.get(database_models.PendingUser, pending_id)
+            if not row or row.status != "pending":
+                raise HTTPException(status_code=404, detail="No pending request")
+            if not approve:
+                row.status = "declined"
+                return {"id": row.id, "status": "declined",
+                        "telegram_id": row.telegram_id, "login": row.login}
+            if session.query(database_models.User).filter(
+                    database_models.User.login == row.login).first():
+                raise HTTPException(status_code=409, detail="Login taken")
+            # NOTE: plaintext, как и остальные пароли. Отдельная задача: argon2 + миграция.
+            password = secrets.token_urlsafe(12)
+            user = database_models.User(login=row.login, password=password,
+                                        telegram_id=row.telegram_id,
+                                        is_admin=False, approved=True)
+            session.add(user)
+            row.status = "approved"
+            session.flush()
+            return {"id": row.id, "status": "approved", "user_id": user.id,
+                    "telegram_id": row.telegram_id, "login": row.login,
+                    "password": password}
+
     def get_user(self, username: str, session=None) -> database_models.User | None:
         def get(_session):
             user = _session.query(database_models.User).filter(
@@ -550,8 +608,25 @@ class EventRepository:
                 return get(session)
         return get(session)
 
-    def get_user_by_telegram_id(self, telegram_id) -> database_models.User | None:
-        return None
+    def get_user_by_telegram_id(self, telegram_id, session=None) -> database_models.User | None:
+        def get(_session):
+            return _session.query(database_models.User).filter(
+                database_models.User.telegram_id == telegram_id).first()
+
+        if session is None:
+            with self.session_scope() as session:
+                return get(session)
+        return get(session)
+
+    def get_admin(self, session=None) -> database_models.User | None:
+        def get(_session):
+            return _session.query(database_models.User).filter(
+                database_models.User.is_admin == True).first()  # noqa: E712
+
+        if session is None:
+            with self.session_scope() as session:
+                return get(session)
+        return get(session)
 
     def get_user_access(self, user: database_models.User, session=None) -> Dict[int, str]:
         def get(_session):

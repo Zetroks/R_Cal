@@ -71,3 +71,14 @@ class LinkAnswerDTO(BaseModel):
     user_id: int
     accept: bool
 
+
+class RegisterDTO(BaseModel):
+    telegram_id: int
+    login: str
+    name: str | None = None
+
+
+class ApproveDTO(BaseModel):
+    pending_id: int
+    approve: bool
+

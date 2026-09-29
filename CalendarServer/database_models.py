@@ -102,6 +102,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     login = Column(String, unique=True)
     password = Column(String)
+    telegram_id = Column(Integer, unique=True, nullable=True)
 
     is_admin = Column(Boolean, default=False)
     approved = Column(Boolean, default=False)
@@ -131,6 +132,17 @@ class UserLink(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     linked_user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     status = Column(String, default="pending")  # pending/accepted
+
+
+class PendingUser(Base):
+    __tablename__ = "pending_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(Integer, unique=True)
+    login = Column(String)
+    name = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending/approved/declined
+    created_at = Column(DateTime, default=func.now())
 
 
 class UserCanEdit(Base):

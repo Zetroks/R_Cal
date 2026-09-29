@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import HTTPException
 from fastapi import Depends
-from .authorization import authenticate_user, create_access_token, get_current_user
+from .authorization import authenticate_user, create_access_token, get_current_user, get_bot_admin
 from CalendarService import dto_models
 
 app = FastAPI()
@@ -160,3 +160,18 @@ def link_answer(dto: dto_models.LinkAnswerDTO, current_user=Depends(get_current_
 @app.get("/my_links")
 def my_links(current_user=Depends(get_current_user)):
     return repo.my_links(current_user)
+
+
+@app.post("/register_request")
+def register_request(dto: dto_models.RegisterDTO):
+    return repo.register_request(dto.telegram_id, dto.login, dto.name)
+
+
+@app.get("/pending_registrations")
+def pending_registrations(admin=Depends(get_bot_admin)):
+    return repo.pending_registrations()
+
+
+@app.post("/approve_registration")
+def approve_registration(dto: dto_models.ApproveDTO, admin=Depends(get_bot_admin)):
+    return repo.approve_registration(dto.pending_id, dto.approve)

@@ -25,7 +25,7 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 
 def create_access_token(data: dict):
@@ -44,6 +44,8 @@ def authenticate_user(username: str, password: str) -> database_models.User | No
     user = database.EventRepository.get().get_user(username)
     if not user:
         return None
+    if not user.approved and not user.is_admin:
+        return None
     # if not verify_password(password, user["hashed_password"]):
     if not verify_password(password, get_password_hash(user.password)):
         return None
@@ -58,7 +60,7 @@ def get_bot(x_bot_token: str = Header(None)) -> bool:
 
 def get_current_user(
         token: str = Depends(oauth2_scheme),
-        telegram_id: int = Header(None),
+        x_telegram_id: int = Header(None),
         is_bot: bool = Depends(get_bot)
 ) -> database_models.User:
     # -----------------------
@@ -74,6 +76,8 @@ def get_current_user(
             user = database.EventRepository.get().get_user(username)
             if user is None:
                 raise HTTPException(status_code=401)
+            if not user.approved and not user.is_admin:
+                raise HTTPException(status_code=403, detail="Not approved")
             return user
 
         except JWTError:
@@ -103,16 +107,18 @@ def get_current_user(
     #     reject()
 
     if is_bot:
-        if telegram_id is None:
+        if x_telegram_id is None:
             raise HTTPException(
                 status_code=400,
                 detail="telegram_id required for bot requests"
             )
 
-        user = database.EventRepository.get().get_user_by_telegram_id(telegram_id)
+        user = database.EventRepository.get().get_user_by_telegram_id(x_telegram_id)
 
         if not user:
             raise HTTPException(status_code=401, detail="Telegram user not found")
+        if not user.approved and not user.is_admin:
+            raise HTTPException(status_code=403, detail="Not approved")
 
         return user
 
@@ -120,3 +126,25 @@ def get_current_user(
     # 3. NO AUTH
     # -----------------------
     raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+def get_bot_admin(
+        x_bot_token: str = Header(None),
+        x_telegram_id: int = Header(None),
+) -> database_models.User:
+    """Бот от имени админа (для approve-эндпоинтов).
+
+    Сверяет токен бота и telegram id админа из env, возвращает
+    реального admin-пользователя из БД. Пароль админа боту не нужен.
+    """
+    import os as _os
+
+    admin_tg = _os.environ.get("TELEGRAM_ADMIN_ID", "")
+    if not x_bot_token or x_bot_token != BOT_SECRET:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not admin_tg or str(x_telegram_id) != str(admin_tg):
+        raise HTTPException(status_code=403, detail="Admin only")
+    admin = database.EventRepository.get().get_admin()
+    if admin is None:
+        raise HTTPException(status_code=500, detail="No admin user")
+    return admin

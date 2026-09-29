@@ -1,0 +1,17 @@
+[Unit]
+Description=R_Cal Telegram bot
+After=network.target calendar-server.service
+Wants=calendar-server.service
+
+[Service]
+Type=simple
+# подставь пользователя и путь на VDS
+User=cal
+WorkingDirectory=/opt/r_cal
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/r_cal/.venv/bin/python -m CalendarBot.bot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
