@@ -19,6 +19,7 @@ fi
 
 for svc in calendar-server calendar-web; do
     echo "== restart $svc =="
+    systemctl --user daemon-reload 2>/dev/null || true
     systemctl --user restart "$svc"
 done
 
