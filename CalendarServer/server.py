@@ -2,6 +2,9 @@
 
 import calendar
 import os
+from contextlib import asynccontextmanager
+from .sync_queue import SyncWorker
+from . import event_archive
 from datetime import date
 from .database import EventRepository
 from fastapi import FastAPI
@@ -16,7 +19,17 @@ from CalendarService import version as cal_version
 INSTALLER_URL = os.environ.get(
     "INSTALLER_URL", "https://github.com/Zetroks/R_Cal/releases")
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app):
+    worker = SyncWorker(repo)
+    worker.start()
+    try:
+        yield
+    finally:
+        worker.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 _cors_origins = [
     o.strip()
@@ -184,6 +197,21 @@ def get_event(kind: str, id: int, current_user=Depends(get_current_user)):
 @app.post("/register_request")
 def register_request(dto: dto_models.RegisterDTO):
     return repo.register_request(dto.telegram_id, dto.login, dto.name)
+
+
+@app.get("/archive/pending")
+def archive_pending(admin=Depends(get_bot_admin)):
+    return event_archive.pending(repo)
+
+
+@app.post("/archive/ack")
+def archive_ack(dto: dto_models.ArchiveAckDTO, admin=Depends(get_bot_admin)):
+    return event_archive.acknowledge(repo, dto.archive_ids)
+
+
+@app.post("/archive/snapshot")
+def archive_snapshot(admin=Depends(get_bot_admin)):
+    return event_archive.snapshot(repo, admin.login)
 
 
 @app.get("/pending_registrations")

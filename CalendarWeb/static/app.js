@@ -462,6 +462,7 @@ async function saveGroupModal() {
     const sync = resp.sync;
     if (sync) {
       let msg = `Сохранено. Google sync: вставлено ${sync.inserted || 0}, обновлено ${sync.updated || 0}.`;
+      if ("queued" in sync) msg = `Сохранено. Синхронизация с Google в фоне: событий в очереди ${sync.queued}.`;
       if (sync.errors && sync.errors.length) msg += " Ошибки: " + sync.errors.slice(0, 3).join("; ");
       $("group-sync-status").textContent = msg;
     } else {

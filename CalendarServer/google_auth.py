@@ -12,6 +12,7 @@ CalendarServer/.google_token.json (в git не попадает, см. .gitignor
 """
 
 import os
+import threading
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -47,19 +48,21 @@ def get_credentials() -> Credentials:
     return creds
 
 
-_service_instance = None
+_services = threading.local()
 
 
 def get_service():
-    """Один service на процесс (build тянет discovery-документ по HTTP)."""
-    global _service_instance
-    if _service_instance is None:
+    """Transport Google API нельзя разделять между потоками."""
+    if not hasattr(_services, "instance"):
         from googleapiclient.discovery import build
+        from google_auth_httplib2 import AuthorizedHttp
+        import httplib2
 
-        _service_instance = build(
-            "calendar", "v3", credentials=get_credentials(), cache_discovery=False
+        _services.instance = build(
+            "calendar", "v3", http=AuthorizedHttp(get_credentials(), http=httplib2.Http(timeout=30)),
+            cache_discovery=False
         )
-    return _service_instance
+    return _services.instance
 
 
 def main():

@@ -24,13 +24,6 @@ for svc in calendar-server calendar-web; do
 done
 
 echo "== health check =="
-PORT="${CAL_SERVER_PORT:-8001}"
-for i in $(seq 1 15); do
-    if curl -sf "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
-        echo "api OK"
-        break
-    fi
-    sleep 2
-done
+./.venv/bin/python scripts/check_health.py
 
 echo UPDATE_DONE

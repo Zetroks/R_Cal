@@ -117,7 +117,16 @@ def push_event(kind: str, obj, event_type) -> str:
             if "404" not in str(exc) and "410" not in str(exc):
                 raise
             logging.warning("Google event %s gone, re-inserting", gid)
-    created = svc.events().insert(calendarId=target, body=body).execute()
+    insert_id = getattr(obj, "_google_insert_id", None)
+    if insert_id:
+        body["id"] = insert_id
+    try:
+        created = svc.events().insert(calendarId=target, body=body).execute()
+    except Exception as exc:
+        if not insert_id or getattr(getattr(exc, "resp", None), "status", None) != 409:
+            raise
+        body.pop("id", None)
+        created = svc.events().patch(calendarId=target, eventId=insert_id, body=body).execute()
     return created["id"]
 
 

@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, ForeignKey, Boolean, DateTime
+    Column, Integer, String, ForeignKey, Boolean, DateTime, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -152,6 +152,25 @@ class UserCanEdit(Base):
 
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     type_id = Column(Integer, ForeignKey("event_types.id"), primary_key=True)
+
+
+class ArchiveRecord(Base):
+    __tablename__ = "event_archive"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    archive_id = Column(String, unique=True, nullable=False)
+    payload = Column(JSON, nullable=False)
+    delivered = Column(Boolean, default=False, nullable=False, index=True)
+
+
+class GoogleSyncJob(Base):
+    __tablename__ = "google_sync_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payload = Column(JSON, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    retry_at = Column(DateTime, default=func.now(), nullable=False)
+    last_error = Column(String, nullable=True)
 
 
 class EventChangeLog(Base):

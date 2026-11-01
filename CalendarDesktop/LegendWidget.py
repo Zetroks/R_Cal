@@ -442,6 +442,8 @@ class GroupEditWidget(QDialog):
         if sync:
             msg = (f"Сохранено. Google sync: вставлено {sync.get('inserted', 0)}, "
                    f"обновлено {sync.get('updated', 0)}.")
+            if "queued" in sync:
+                msg = f"Сохранено. Синхронизация с Google в фоне: событий в очереди {sync['queued']}."
             errs = sync.get("errors") or []
             if errs:
                 msg += " Ошибки: " + "; ".join(errs[:3])

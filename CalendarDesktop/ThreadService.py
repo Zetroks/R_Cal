@@ -69,8 +69,17 @@ class CollectYearWorker(QObject):
 class PostWorker(QObject):
     finished = pyqtSignal(object)  # response
 
-    def __init__(self):
+    def __init__(self, endpoint, payload):
         super().__init__()
+        self.endpoint = endpoint
+        self.payload = payload
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            self.post(self.endpoint, self.payload)
+        except Exception as exc:
+            self.finished.emit({"status": "error", "detail": str(exc)})
 
     @pyqtSlot(str, object)
     def post(self, endpoint, json_data):
@@ -141,7 +150,7 @@ class UploadWorker(QObject):
         dto = EventUpsertDTO(action=action, kind=kind, **data)
         endpoint = f"/event"
         thread = QThread()
-        worker = PostWorker()
+        worker = PostWorker(endpoint, dto.model_dump(mode="json"))
 
         worker.moveToThread(thread)
 
@@ -153,13 +162,16 @@ class UploadWorker(QObject):
             thread.deleteLater()
 
         worker.finished.connect(on_finished)  # type: ignore
-        thread.started.connect(lambda: worker.post(endpoint, dto.model_dump(mode="json")))  # type: ignore
+        thread.started.connect(worker.run)  # type: ignore
 
         thread.start()
 
     @pyqtSlot(object, dict)
     def on_response(self, old_event: models.EventModel, response: dict):
         status = response.get("status", "None")
+        if status not in ("created", "updated", "deleted"):
+            self.in_flight.discard(old_event.sync_id)
+            return
         if status == "deleted":
             self.in_flight.discard(old_event.sync_id)
             self.pending.pop(old_event.sync_id, None)

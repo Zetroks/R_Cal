@@ -1,5 +1,6 @@
 .venv/
 .env
+/creds.json
 .google_client_secret.json
 .google_token.json
 __pycache__/

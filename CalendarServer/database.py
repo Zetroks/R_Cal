@@ -2,6 +2,8 @@ from fastapi import HTTPException
 
 from . import database_models
 from . import google_sync
+from . import sync_queue
+from . import event_archive
 import logging
 import secrets
 
@@ -198,12 +200,12 @@ class EventRepository:
                 raise ValueError(f"Unknown kind: {dto.kind}")
 
             session.add(obj)
-            session.commit()
-            session.refresh(obj)
+            session.flush()
             session.add(database_models.EventChangeLog(
                 kind=dto.kind, event_id=obj.id, action="upsert"))
-            session.commit()
             self._google_after_write(dto.kind, obj, session)
+            event_archive.record(session, dto.kind, obj, "create", user.login)
+            session.commit()
             return {"status": "created", "id": obj.id, "version": obj.version,
                     "google_event_id": obj.google_event_id}
 
@@ -226,11 +228,12 @@ class EventRepository:
                     raise Exception("Version conflict or not found")
                 self._track_history_object(obj, session)
                 gid, tid = obj.google_event_id, obj.type_id
+                event_archive.record(session, dto.kind, obj, "delete", user.login)
                 session.delete(obj)
                 session.flush()
                 session.add(database_models.EventChangeLog(
                     kind=dto.kind, event_id=dto.id, action="delete"))
-                self._google_after_delete(dto.kind, gid, tid)
+                self._google_after_delete(dto.kind, gid, tid, session)
 
                 return {"status": "deleted", "id": dto.id}
 
@@ -247,24 +250,31 @@ class EventRepository:
                 raise Exception("Version conflict or not found")
             self._track_history_object(obj, session)
             gid, tid = obj.google_event_id, obj.type_id
+            event_archive.record(session, dto.kind, obj, "delete", user.login)
             session.delete(obj)
             session.flush()
             session.add(database_models.EventChangeLog(
                 kind=dto.kind, event_id=dto.id, action="delete"))
-            self._google_after_delete(dto.kind, gid, tid)
+            self._google_after_delete(dto.kind, gid, tid, session)
 
             return {"status": "deleted", "id": dto.id}
 
     def update_event(self, dto: dto_models.EventUpsertDTO, user: database_models.User) -> database_models.EventModel:
         with self.session_scope() as session:
+            model = {"annual": AnnualEvent, "daily": DailyEvent}.get(dto.kind)
+            if model is None:
+                raise ValueError("Unknown event type")
+            obj = session.get(model, dto.id)
+            if obj is None:
+                raise HTTPException(status_code=404, detail="Event not found")
+            if not user.is_admin:
+                editable = self.get_user_editable(user, session=session)
+                if obj.type_id not in editable or dto.type_id not in editable:
+                    raise HTTPException(status_code=403, detail="Not enough access")
             if dto.kind == "annual":
                 obj = session.get(database_models.AnnualEvent, dto.id)
                 if not obj:
                     raise ValueError("AnnualEvent not found")
-                if not user.is_admin:
-                    user_editable_access = self.get_user_editable(user, session=session)
-                    if obj.type_id not in user_editable_access:
-                        raise HTTPException(status_code=403, detail="Not enough access")
                 self._track_history_object(obj, session)
 
                 obj.title = dto.title
@@ -290,12 +300,11 @@ class EventRepository:
             else:
                 raise ValueError(f"Unknown kind: {dto.kind}")
 
-            session.commit()
-            session.refresh(obj)
             session.add(database_models.EventChangeLog(
                 kind=dto.kind, event_id=obj.id, action="upsert"))
-            session.commit()
             self._google_after_write(dto.kind, obj, session)
+            event_archive.record(session, dto.kind, obj, "update", user.login)
+            session.commit()
 
             return {"status": "updated", "id": obj.id, "version": obj.version,
                     "google_event_id": obj.google_event_id}
@@ -361,29 +370,12 @@ class EventRepository:
                 raise HTTPException(status_code=400, detail="No target Google calendar")
             annual = session.query(AnnualEvent).filter(AnnualEvent.type_id == type_id).all()
             daily = session.query(DailyEvent).filter(DailyEvent.type_id == type_id).all()
-            inserted = updated = 0
-            errors: list = []
+            queued = 0
             for kind, obj in [("annual", o) for o in annual] + [("daily", o) for o in daily]:
-                try:
-                    was = bool(obj.google_event_id)
-                    obj.google_event_id = google_sync.push_event(kind, obj, event_type)
-                    if was:
-                        updated += 1
-                    else:
-                        inserted += 1
-                except Exception as exc:  # noqa: BLE001 - per-event errors must not abort backfill
-                    errors.append(f"{kind}:{obj.id}: {exc}")
-                    if len(errors) > 20:
-                        errors.append("...truncated")
-                        break
+                sync_queue.enqueue_write(session, kind, obj, event_type)
+                queued += 1
             session.commit()
-            logging.info(
-                "Google backfill type=%s target=%s inserted=%s updated=%s errors=%d",
-                type_id, target, inserted, updated, len(errors),
-            )
-            if errors:
-                logging.warning("Google backfill errors: %s", errors[:10])
-            return {"target": target, "inserted": inserted, "updated": updated, "errors": errors}
+            return {"target": target, "queued": queued, "inserted": 0, "updated": 0, "errors": []}
 
     @staticmethod
     def get_google_calendars() -> dict:
@@ -708,28 +700,10 @@ class EventRepository:
 
     @staticmethod
     def _google_after_write(kind: str, obj, session) -> None:
-        try:
-            event_type = session.get(EventType, obj.type_id)
-            if event_type is None or not google_sync.is_sync_enabled(event_type):
-                return
-            gid = google_sync.push_event(kind, obj, event_type)
-            if gid != obj.google_event_id:
-                obj.google_event_id = gid
-                session.commit()
-        except Exception:
-            logging.exception("Google sync failed for %s id=%s", kind, getattr(obj, "id", None))
+        sync_queue.enqueue_write(session, kind, obj, session.get(EventType, obj.type_id))
 
-    def _google_after_delete(self, kind: str, google_event_id: str | None, type_id: int) -> None:
-        if not google_event_id:
-            return
-        try:
-            with self.session_scope() as session:
-                event_type = session.get(EventType, type_id)
-                target = google_sync.resolve_target_calendar(event_type) if event_type else None
-            if target:
-                google_sync.delete_google_event(target, google_event_id)
-        except Exception:
-            logging.exception("Google unsync failed for %s", google_event_id)
+    def _google_after_delete(self, kind: str, google_event_id: str | None, type_id: int, session) -> None:
+        sync_queue.enqueue_delete(session, google_event_id, session.get(EventType, type_id))
 
     @staticmethod
     def _track_history_object(obj, session):

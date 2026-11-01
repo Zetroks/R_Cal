@@ -17,6 +17,7 @@ INSTALLER_URL (по умолчанию страница релизов).
 import asyncio
 import html
 import json
+from io import BytesIO
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ UPDATE_SCRIPT = os.environ.get(
     "UPDATE_SCRIPT",
     str(Path(__file__).resolve().parent.parent / "scripts" / "update_prod.sh"))
 BOT_UNIT = os.environ.get("BOT_UNIT", "calendar-bot")
+ARCHIVE_CHAT_ID = int(os.environ.get("TELEGRAM_ARCHIVE_CHAT_ID") or 0)
 
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_FILE = BASE_DIR / ".pending_seen.json"
@@ -884,6 +886,58 @@ async def update_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- main ----------------
 
+async def cmd_archive_chat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(
+        f"ID этого чата: {update.effective_chat.id}\n"
+        "На машине бота задай TELEGRAM_ARCHIVE_CHAT_ID этим значением и перезапусти бота.\n"
+        "Затем /archive_snapshot выгрузит существующие события.")
+
+
+async def cmd_archive_snapshot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not ARCHIVE_CHAT_ID:
+        await update.message.reply_text("Сначала настрой TELEGRAM_ARCHIVE_CHAT_ID (/archive_chat).")
+        return
+    try:
+        def request():
+            response = _req("POST", "/archive/snapshot", _admin_headers())
+            response.raise_for_status()
+            return response.json()
+        result = await asyncio.to_thread(request)
+        await update.message.reply_text(f"Снимок поставлен в очередь: событий {result['queued']}.")
+    except Exception:
+        log.exception("Archive snapshot failed")
+        await update.message.reply_text("Не удалось создать снимок архива. Подробности в логе бота.")
+
+
+async def poll_archive(ctx: ContextTypes.DEFAULT_TYPE):
+    if not ARCHIVE_CHAT_ID:
+        return
+    try:
+        def request(method, path, **kwargs):
+            response = _req(method, path, _admin_headers(), **kwargs)
+            response.raise_for_status()
+            return response.json()
+        data = await asyncio.to_thread(request, "GET", "/archive/pending")
+        for entry in data["records"]:
+            archive_id = entry["archive_id"]
+            content = json.dumps(entry, ensure_ascii=False, indent=2).encode("utf-8")
+            document = BytesIO(content)
+            document.name = f"r_cal_{entry['sequence']}_{archive_id}.json"
+            event = entry["event"]
+            caption = (f"#{entry['sequence']} {entry['action']} {entry['kind']}:{event['id']}\n"
+                       f"{str(event.get('title') or '')[:150]}\n{entry['recorded_at']}")
+            await ctx.bot.send_document(chat_id=ARCHIVE_CHAT_ID, document=document, caption=caption)
+            # Acknowledge only after Telegram confirms receipt. An interrupted
+            # ACK can duplicate a document; archive_id allows deduplication.
+            await asyncio.to_thread(request, "POST", "/archive/ack", json={"archive_ids": [archive_id]})
+    except Exception:
+        log.exception("Archive delivery failed; unacknowledged records will retry")
+
+
 def build_app():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -895,6 +949,8 @@ def build_app():
     app.add_handler(conv)
     app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(CommandHandler("update", cmd_update))
+    app.add_handler(CommandHandler("archive_chat", cmd_archive_chat))
+    app.add_handler(CommandHandler("archive_snapshot", cmd_archive_snapshot))
     app.add_handler(CallbackQueryHandler(update_decision, pattern="^upd:"))
     app.add_handler(MessageHandler(filters.Regex("^\U0001F4C5"), on_menu))
     app.add_handler(MessageHandler(filters.Regex("^\U0001F4E5"), on_menu))
@@ -938,6 +994,8 @@ def main():
 
     app.job_queue.run_once(lambda ctx: poll_pending(ctx), when=5)
     app.job_queue.run_repeating(lambda ctx: poll_pending(ctx), interval=20, first=25)
+    if ARCHIVE_CHAT_ID:
+        app.job_queue.run_repeating(poll_archive, interval=10, first=3)
 
     log.info("bot polling, api=%s", API)
     app.run_polling()

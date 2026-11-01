@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum, Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 
 from CalendarService.AccessEnum import AccessEnum
@@ -76,6 +76,10 @@ class RegisterDTO(BaseModel):
     telegram_id: int
     login: str
     name: str | None = None
+
+
+class ArchiveAckDTO(BaseModel):
+    archive_ids: list[str] = Field(min_length=1, max_length=100)
 
 
 class ApproveDTO(BaseModel):
