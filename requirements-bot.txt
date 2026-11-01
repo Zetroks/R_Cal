@@ -1,0 +1,5 @@
+# Telegram worker only; no desktop or API dependencies.
+requests>=2.32,<3
+python-dotenv>=1.0
+python-telegram-bot[job-queue]>=21
+paramiko>=3.0

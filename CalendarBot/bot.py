@@ -838,7 +838,7 @@ async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("Нет", callback_data="upd:no"),
     ]])
     await update.message.reply_text(
-        "Обновить сервер с гита и перезапустить сервисы?", reply_markup=kb)
+        "Обновить сервер и код бота с GitHub, затем перезапустить сервисы?", reply_markup=kb)
 
 
 async def update_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -861,27 +861,30 @@ async def update_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     before = await asyncio.to_thread(_version)
     await query.edit_message_text(f"Обновляю (было {before})...")
 
-    def _run():
-        import subprocess
-
-        try:
-            p = subprocess.run(["sh", UPDATE_SCRIPT], capture_output=True,
-                               text=True, timeout=600)
-            out = (p.stdout + "\n" + p.stderr).strip()
-            return p.returncode, out[-3000:]
-        except Exception as exc:
-            return -1, str(exc)
-
-    code, out = await asyncio.to_thread(_run_update)
-    after = await asyncio.to_thread(_version)
-    await query.message.reply_text(
-        f"Готово (код {code}). Было {before}, стало {after}.\n```\n{out}\n```",
-        parse_mode=None)
-    if code == 0:
-        await query.message.reply_text("Перезапускаю бота...")
-        import subprocess
-
-        subprocess.Popen(["systemctl", "--user", "restart", BOT_UNIT])
+    if ctx.bot_data.get("update_in_progress"):
+        await query.message.reply_text("Обновление уже выполняется.")
+        return
+    ctx.bot_data["update_in_progress"] = True
+    try:
+        code, out = await asyncio.to_thread(_run_update)
+        after = await asyncio.to_thread(_version)
+        await query.message.reply_text(
+            f"Сервер: код {code}. Было {before}, стало {after}.\n{out}", parse_mode=None)
+        if code != 0:
+            return
+        await query.message.reply_text("Сервер готов. Обновляю код и зависимости бота...")
+        from .self_update import prepare_update, restart
+        code, out = await asyncio.to_thread(prepare_update)
+        await query.message.reply_text(out, parse_mode=None)
+        if code != 0:
+            return
+        await query.message.reply_text("Проверки бота прошли. Перезапускаю службу...")
+        await asyncio.to_thread(restart, BOT_UNIT)
+    except Exception:
+        log.exception("Bot update/restart failed")
+        await query.message.reply_text("Обновление или перезапуск не удались. Подробности в логе бота.")
+    finally:
+        ctx.bot_data["update_in_progress"] = False
 
 
 # ---------------- main ----------------
